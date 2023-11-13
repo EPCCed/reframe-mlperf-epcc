@@ -49,8 +49,8 @@ def main():
         local_rank = os.environ["LOCAL_RANK"]
         torch.cuda.set_device("cuda:" + local_rank)
 
-    train_data = dl.get_imagenet_dataloader("train/")
-    # val_data = dl.get_imagenet_dataloader("val/")
+    train_data = dl.get_imagenet_dataloader("train")
+    val_data = dl.get_imagenet_dataloader("val")
 
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
