@@ -1,2 +1,4 @@
 *.hdf5
 
+slurm*.out
+*.pyc

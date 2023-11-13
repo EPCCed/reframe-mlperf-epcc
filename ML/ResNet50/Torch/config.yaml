@@ -1,0 +1,19 @@
+device: cpu
+
+data:
+    data_dir: /work/ta127/shared/imagenet-1k/
+    global_batch_size: 16
+    shuffle: True
+    n_epochs: 128
+    prefetch: 4
+
+opt:
+    name: SGD
+    momentum: 0.9
+    weight_decay: 0.0001
+
+lr_schedule:
+    base_lr: 0.002
+    end_lr: 0.0001
+    decay_steps: 5
+    poly_power: 2 

@@ -1,0 +1,29 @@
+device: cpu
+
+data:
+    data_dir: 
+    global_batch_size: 16
+    shuffle: True
+    n_epochs: 128
+    prefetch: 4
+
+opt:
+    name: Adam
+    betas: [0.9, 0.999]
+    weight_decay: 0.0001
+
+lr_schedule:
+    type: cosine_annealing # or multistep
+    #for both cos & mul
+    base_lr: 0.001
+    lr_warmup_steps: 400
+    lr_warmup_factor: 1
+    #mul
+    milstones: 800
+    decay_rate: 0.1
+    #cos
+    t_max: 10000
+    eta_min: 0
+
+training:
+    target_iou: 0.82  
