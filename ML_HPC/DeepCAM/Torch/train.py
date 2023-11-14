@@ -71,30 +71,17 @@ def main():
         raise NameError(f"Optimiser {gc['opt']['name']} not supported please use ADAM|ADAMW|LAMB")
     
     if gc["lr_schedule"]["type"] == "multistep":
-        milestones = [gc["lr_schedule"]["milestones"]]
-        gamma = gc["lr_schedule"]["decay_rate"]
-
-
         if gc["lr_schedule"]["lr_warmup_steps"] > 0:
-            scheduler = MultiStepLRWarmup(opt, 
-                                          warmup_steps=gc["lr_schedule"]["lr_warmup_steps"], 
-                                          warmup_factor=gc["lr_schedule"]["lr_warmup_factor"], 
-                                          milestones=milestones, 
-                                          gamma=gamma, 
-                                          last_epoch=-1) # will have to change once checkpointing supported
+            scheduler = MultiStepLRWarmup(opt, last_epoch=-1) # will have to change L_E once checkpointing supported
         else:
             scheduler = torch.optim.lr_scheduler.MultiStepLR(opt, 
-                                                             milestones=milestones, 
-                                                             gamma=gamma, 
+                                                             milestones=[gc["lr_schedule"]["milestones"]], 
+                                                             gamma=gc["lr_schedule"]["decay_rate"], 
                                                              last_epoch=-1)
+
     elif gc["lr_schedule"]["type"] == "cosine_annealing":
         if gc["lr_schedule"]["lr_warmup_steps"] > 0:
-            scheduler = CosineAnnealingLRWarmup(opt, 
-                                                warmup_steps=gc["lr_schedule"]["lr_warmup_steps"], 
-                                                warmup_factor=gc["lr_schedule"]["lr_warmup_factor"],
-                                                T_max=gc["lr_schedule"]["t_max"],
-                                                eta_min=gc["lr_schedule"]["eta_min"],
-                                                last_epoch=-1)
+            scheduler = CosineAnnealingLRWarmup(opt, last_epoch=-1)
         else:
             scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(opt,
                                                                   T_max=gc["lr_schedule"]["t_max"],

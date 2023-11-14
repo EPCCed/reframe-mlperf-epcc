@@ -19,7 +19,7 @@ lr_schedule:
     lr_warmup_steps: 400
     lr_warmup_factor: 1
     #mul
-    milstones: 800
+    milestones: 800
     decay_rate: 0.1
     #cos
     t_max: 10000

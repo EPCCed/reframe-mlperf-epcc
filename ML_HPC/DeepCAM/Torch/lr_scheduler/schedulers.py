@@ -5,17 +5,19 @@ import warnings
 import torch
 from torch.optim.lr_scheduler import _LRScheduler
 
+from ML_HPC.gc import GlobalContext
+gc = GlobalContext()
+
 class MultiStepLRWarmup(_LRScheduler):
 
     @torch.jit.ignore
-    def __init__(self, optimizer, warmup_steps, warmup_factor,
-                 milestones, gamma=0.1, last_epoch=-1, verbose=False):
+    def __init__(self, optimizer, last_epoch=-1, verbose=False):
         
-        self.warmup_steps = warmup_steps
-        self.warmup_factor = warmup_factor
+        self.warmup_steps = gc["lr_schedule"]["lr_warmup_steps"]
+        self.warmup_factor = gc["lr_schedule"]["lr_warmup_factor"]
         self.warmup_slope = 1./float(self.warmup_steps) if self.warmup_steps > 0 else 1.
-        self.milestones = Counter([x + self.warmup_steps + 1 for x in milestones])
-        self.gamma = gamma
+        self.milestones = Counter([x + self.warmup_steps + 1 for x in [gc["lr_schedule"]["milestones"]]])
+        self.gamma = gc["lr_schedule"]["decay_rate"]
         super(MultiStepLRWarmup, self).__init__(optimizer, last_epoch, verbose)
 
     @torch.jit.export
@@ -45,14 +47,13 @@ class MultiStepLRWarmup(_LRScheduler):
 class CosineAnnealingLRWarmup(_LRScheduler):
 
     @torch.jit.ignore
-    def __init__(self, optimizer, warmup_steps, warmup_factor,
-                 T_max, eta_min=0, last_epoch=-1, verbose=False):
+    def __init__(self, optimizer, last_epoch=-1, verbose=False):
         
-        self.warmup_steps = warmup_steps
-        self.warmup_factor = warmup_factor
+        self.warmup_steps = gc["lr_schedule"]["lr_warmup_steps"]
+        self.warmup_factor = gc["lr_schedule"]["lr_warmup_factor"]
         self.warmup_slope = 1./float(self.warmup_steps) if self.warmup_steps > 0 else 1.
-        self.T_max = T_max
-        self.eta_min = eta_min
+        self.T_max = gc["lr_schedule"]["t_max"]
+        self.eta_min = gc["lr_schedule"]["eta_min"]
         super(CosineAnnealingLRWarmup, self).__init__(optimizer, last_epoch, verbose)
 
     @torch.jit.export     
