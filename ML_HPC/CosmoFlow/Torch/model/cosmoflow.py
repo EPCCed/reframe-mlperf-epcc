@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from ML_HPC.gc import GlobalContext
+gc = GlobalContext()
+
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, k_size):
         super().__init__()
@@ -16,7 +19,7 @@ class ConvBlock(nn.Module):
         return self.pool(self.act(self.conv(x)))
 
 class StandardCosmoFlow(nn.Module):
-    def __init__(self, k_size=3, n_layers=5, n_filters=32, dropout_rate = 0.5):
+    def __init__(self, k_size=3, n_layers=5, n_filters=32):
         super().__init__()
 
         self.conv_blocks = nn.ModuleList()
@@ -30,10 +33,10 @@ class StandardCosmoFlow(nn.Module):
         self.l1 = nn.Linear(flattened_shape, 128)
         self.l2 = nn.Linear(128, 64)
         self.lO = nn.Linear(64, 4)
-        self.dropout = True if dropout_rate != 0 else False
+        self.dropout = True if gc["model"]["dropout"] != 0 else False
         if self.dropout:
-            self.d1 = nn.Dropout(p=dropout_rate)
-            self.d2 = nn.Dropout(p=dropout_rate)
+            self.d1 = nn.Dropout(p=gc["model"]["dropout"])
+            self.d2 = nn.Dropout(p=gc["model"]["dropout"])
         
         for l in [self.l1,self.l2,self.lO]:
             torch.nn.init.xavier_uniform_(l.weight)

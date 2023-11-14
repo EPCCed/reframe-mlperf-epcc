@@ -4,18 +4,22 @@ Data preperation of cosmoflow h5 files to .pt
 
 import os
 import click
-from functools import partial
+from pathlib import Path
+import sys
+import os
+path_root = Path(__file__).parents[4]
+sys.path.append(str(path_root))
 
 import h5py
 import torch
 from mpi4py import MPI
-#from .download import download_cosmoflow
-
+from ML_HPC.CosmoFlow.Torch.data_prep.download import download_cosmoflow
 
     
-def train_test_split(files: list, test_size: float=0.2):
+def train_test_split(files: list, test_size: float = 0.2):
     n = round(int(len(files) * test_size))
     return files[n:], files[:n]
+
 
 def find_h5_files(dir):
     files = []
@@ -27,6 +31,7 @@ def find_h5_files(dir):
 
 
 def chunk_files_per_worker(files: list, n_workers: int):
+    return [files[i::n_workers] for i in range(n_workers)]
     n = len(files) // n_workers 
     int_chunk = [files[x:x+n] for x in range(0, len(files), n)]
     if len(int_chunk) == n_workers + 1:
@@ -37,27 +42,27 @@ def chunk_files_per_worker(files: list, n_workers: int):
 
 
 def read_h5(filename):
-     with  h5py.File(filename, 'r') as f:
+     with h5py.File(filename, 'r') as f:
         data = torch.from_numpy(f['full'][:])
         label = torch.from_numpy(f['unitPar'][:])
         return data, label
 
 
-def chunker(data, size: int=128):
+def chunker(data, size: int = 128):
     # change from [512,512,512, 4] -> [4,512,512,512]
     n = data.shape[0] // size
-    data = torch.stack(torch.chunk(data, 4, -1),0).squeeze()
+    data = torch.stack(torch.chunk(data, 4, -1), 0).squeeze()
     # change from [4,512,512,512] -> [64, 4, 128, 128, 128]
     data = torch.stack(torch.chunk(data, n, 1))
-    data = torch.cat(torch.chunk(data, n, 3),0)
-    data = torch.cat(torch.chunk(data, n, 4),0)
+    data = torch.cat(torch.chunk(data, n, 3), 0)
+    data = torch.cat(torch.chunk(data, n, 4), 0)
     return data
 
 
 def write_pt_files(data, input_file, output_dir):
     output_file = os.path.join(
             output_dir,
-            os.path.basename(input_file).replace('.hdf5', '.pt' )
+            os.path.basename(input_file).replace('.hdf5', '.pt')
         )
     torch.save(data, output_file)
 
@@ -96,15 +101,14 @@ def main(input_dir, output_dir, download, clean):
     files = find_h5_files(input_dir)
     train_files, test_files = train_test_split(files)
     pw_train = chunk_files_per_worker(train_files, world_size)
-    #pw_test = chunk_files_per_worker(test_files, world_size)
+    pw_val = chunk_files_per_worker(test_files, world_size)
 
     process_files(pw_train[rank], output_dir=os.path.join(output_dir, "train/"))
-    #process_files(pw_test[rank], output_dir=output_dir+"/test")
+    process_files(pw_val[rank], output_dir=output_dir+"/val")
     if clean:
         clean_files(pw_train[rank])
-        #clean_files(pw_test[rank])
     comm.Barrier()
-    
+
 
 if __name__ == '__main__':
     main()

@@ -1,10 +1,8 @@
+import os
 from pathlib import Path
 import sys
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
-
-import os
-
 
 import torch
 import torch.distributed as dist
@@ -29,12 +27,11 @@ class CELoss(nn.Module):
         # instantiate loss
         self.criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight).float(), reduction='none')
 
-
     def forward(self, logit, target):
 
         # squeeze target
         target = target.squeeze(1)
-        
+   
         # get losses and predictions
         losses = self.criterion(logit, target)
 
@@ -77,6 +74,7 @@ def main():
         milestones = [gc["lr_schedule"]["milestones"]]
         gamma = gc["lr_schedule"]["decay_rate"]
 
+
         if gc["lr_schedule"]["lr_warmup_steps"] > 0:
             scheduler = MultiStepLRWarmup(opt, 
                                           warmup_steps=gc["lr_schedule"]["lr_warmup_steps"], 
@@ -106,7 +104,7 @@ def main():
     loss_pow = -0.125
     class_weights = [0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow]
     criterion = CELoss(class_weights).to(gc.device)
-
+    
     epoch = 0
     stop_training = False
     model.train()
