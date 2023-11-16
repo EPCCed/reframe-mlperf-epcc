@@ -11,7 +11,7 @@ from flash.core.optimizers import LAMB
 
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/DeepCAM/Torch/config.yaml")
-import ML_HPC.DeepCAM.Torch.data.CPU_data_loader as dl
+import ML_HPC.DeepCAM.Torch.data.data_loader as dl
 from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
@@ -103,7 +103,7 @@ def main():
         model.train()
         
         for x, y, _ in train_data:
-            opt.zero_grad()
+            opt.zero_grad(set_to_none=True)
 
             x, y = x.to(gc.device), y.to(gc.device)
 

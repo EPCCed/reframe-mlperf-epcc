@@ -104,7 +104,6 @@ def main():
             print(x.shape, y.shape)
             x, y = x.to(gc.device), y.to(gc.device)
             loss = train_step(x, y, model, loss_fn, opt, train_metric)
-            exit()
 
         if E % 4 == 0:
             for x, y in val_data:

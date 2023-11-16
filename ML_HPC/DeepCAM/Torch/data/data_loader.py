@@ -180,7 +180,7 @@ def get_dataloaders():
                               gc["data"]["global_batch_size"] // gc.world_size,
                               num_workers =gc.world_size,
                               sampler = distributed_train_sampler,
-                              pin_memory = True,
+                              pin_memory = True if gc.device != "cpu" else False,
                               drop_last = True)
 
     train_size = train_set.global_size
@@ -199,7 +199,7 @@ def get_dataloaders():
     validation_loader = DataLoader(validation_set,
                                    1,
                                    num_workers = gc.world_size,
-                                   pin_memory = True,
+                                   pin_memory = True if gc.device != "cpu" else False,
                                    drop_last = False)
     
     validation_size = validation_set.global_size    
