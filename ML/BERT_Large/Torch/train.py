@@ -5,7 +5,6 @@ import random
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
 
-
 import torch 
 import torch.nn as nn
 import torch.distributed as dist
@@ -14,7 +13,7 @@ from flash.core.optimizers import LAMB
 from ML.gc import GlobalContext
 gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML/BERT_Large/Torch/config.yaml")
 from ML.BERT_Large.Torch.model.BERT import get_bertlarge
-from ML.BERT_Large.Torch.data.data_loader import get_pretrian_dataloader
+from ML.BERT_Large.Torch.data.data_loader import get_pretrian_dataloader, get_eval_dataset
 from ML.BERT_Large.Torch.lr_scheduler.schedulers import LinearWarmupPolyDecayScheduler, LinearWarmUpScheduler
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
 
@@ -39,14 +38,7 @@ def calc_mlm_acc(outputs, masked_lm_labels, dense_seq_output=False):
     return mlm_acc, num_masked
 
 
-def run_eval(
-    model,
-    eval_dataloader,
-    device,
-    num_eval_examples,
-    first_eval=False,
-    use_cache=False,
-):
+def run_eval(model,eval_dataloader,):
     model.eval()
     total_eval_loss, total_eval_mlm_acc = 0.0, 0.0
     total_masked = 0
@@ -65,8 +57,8 @@ def run_eval(
             total_eval_mlm_acc += mlm_acc * num_masked
             total_masked += num_masked
     model.train()
-    total_masked = torch.tensor(total_masked, device=device, dtype=torch.int64)
-    total_eval_loss = torch.tensor(total_eval_loss, device=device, dtype=torch.float64)
+    total_masked = torch.tensor(total_masked, device=gc.device, dtype=torch.int64)
+    total_eval_loss = torch.tensor(total_eval_loss, device=gc.device, dtype=torch.float64)
     if torch.distributed.is_initialized():
         # Collect total scores from all ranks
         dist.all_reduce(total_eval_mlm_acc, op=dist.ReduceOp.SUM)
@@ -139,6 +131,8 @@ def main():
     stop_training = False
     epoch = 0
 
+    eval_dataloader = get_eval_dataset()
+
     while True:
         for file in my_files:
             dataloader = get_pretrian_dataloader(file)
@@ -155,12 +149,14 @@ def main():
 
                 opt.step()
                 lr_scheduler.step()
-        random.shuffle(files)
-        my_files = per_worker_files(files)
-        epoch+=1
 
-        
+        eval_loss, eval_accuracy = run_eval(model, eval_dataloader)
+
+        stop_training = eval_accuracy >= gc["training"]["target_mlm_accuracy"]
+        epoch+=1
         if epoch >= gc["data"]["n_epochs"] or stop_training:
             break
 
-    
+        random.shuffle(files)
+        my_files = per_worker_files(files)
+

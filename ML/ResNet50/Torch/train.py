@@ -99,7 +99,7 @@ def main():
 
     model.train()
 
-    for E in range(1, gc["data"]["n_epochs"] + 1):
+    for E in range(1, gc["data"]["n_epochs"]+1):
         for i, (x, y) in enumerate(train_data):
             print(x.shape, y.shape)
             x, y = x.to(gc.device), y.to(gc.device)

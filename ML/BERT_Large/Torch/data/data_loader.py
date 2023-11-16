@@ -1,7 +1,9 @@
+import os
+
 import numpy as np
 import h5py
 import torch
-from torch.utils.data import Dataset, RandomSampler, DataLoader
+from torch.utils.data import Dataset, RandomSampler, DataLoader, SequentialSampler
 
 from ML.gc import GlobalContext
 gc = GlobalContext()
@@ -160,12 +162,14 @@ class pretraining_dataset_v2(Dataset):
                 torch.from_numpy(packed_input_len),
             ]
 
+
 def get_dataset(input_file, max_pred_len=76, max_seq_len=512, pack_samples=False):
     f = h5py.File(input_file, "r")
     if "input_mask" not in f.keys():
         return pretraining_dataset_v2(f, input_file, max_pred_len, max_seq_len, pack_samples)
     else:
         return pretraining_dataset_v1(f, input_file, max_pred_len)
+
 
 def get_pretrian_dataloader(input_file):
     train_data = get_dataset(input_file)
@@ -178,3 +182,37 @@ def get_pretrian_dataloader(input_file):
                       drop_last=True,
                       pin_memory=True if gc.device != "cpu" else False)
 
+
+def get_eval_dataset():
+    eval_data = []
+    eval_dir = os.path.join(gc["data"]["data_dir"], "hdf5", "eval_varlength")
+    for eval_file in sorted(os.listdir(eval_dir)):
+        eval_file_path = os.path.join(eval_dir, eval_file)
+
+        if os.path.isfile(eval_file_path) and "part" in eval_file_path:
+            eval_data.extend(
+                get_dataset(
+                    eval_file_path, max_pred_length=76
+                )
+            )
+            if len(eval_data) > 10000:  # 10000 eval samples
+                eval_data = eval_data[: 10000]
+                break
+    if torch.distributed.is_initialized():
+        chunk_size = 10000 // gc.world_size
+        rank = gc.rank
+        remainder = 10000 % gc.world_size
+        if rank < remainder:
+            eval_data = eval_data[
+                (chunk_size + 1) * rank : (chunk_size + 1) * (rank + 1)
+            ]
+        else:
+            eval_data = eval_data[
+                chunk_size * rank + remainder : chunk_size * (rank + 1) + remainder
+            ]
+
+    eval_sampler = SequentialSampler(eval_data)
+    eval_dataloader = DataLoader(
+        eval_data, sampler=eval_sampler, batch_size=gc["data"]["global_eval_batch_size"], num_workers=0
+    )
+    return eval_dataloader
