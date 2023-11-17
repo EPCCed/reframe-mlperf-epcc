@@ -1,11 +1,11 @@
 device: cpu
 
 data:
-    data_dir: /work/z19/shared/mlperf-hpc/cosmoflow/mini/cosmoUniverse_2019_05_4parE_tf_v2_mini
-    global_batch_size: 64
+    data_dir: /work/z19/shared/mlperf-hpc/cosmoflow/full/cosmoUniverse_2019_05_4parE_tf_v2/
+    global_batch_size: 8
     n_epochs: 128
-    n_train: 524288
-    n_eval: 65536
+    n_train: 64 #524288
+    n_eval: 32 #65536
     compression: gzip
     apply_log: True
     shuffle: True
@@ -30,5 +30,5 @@ lr_schedule:
         32: 0.25
         64: 0.125
 
-train:
+training:
     target_mae: 0.124

@@ -4,7 +4,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, DistributedSampler, RandomSampler
 from tfrecord.reader import tfrecord_loader
 
-from ML.gc import GlobalContext
+from ML_HPC.gc import GlobalContext
 
 gc = GlobalContext()
 
@@ -15,21 +15,23 @@ class CosmoDataset(Dataset):
         else:
             size = gc["data"]["n_eval"]
         self.files = os.listdir(dataset_path)[:size]
-        self.root - dataset_path
+        self.root = dataset_path
         self.length = len(self.files)
     
-    def len(self):
+    def __len__(self):
         return self.length
     
     def __getitem__(self, index):
         # Theres only one sample per file
         data = next(tfrecord_loader(os.path.join(self.root, self.files[index]),
+                                    None,
                                     description={"x": "byte", "y":"float"},
                                     compression_type=gc["data"]["compression"]
                                     ))
         x = torch.frombuffer(data["x"], dtype=torch.int16)
         x = torch.reshape(x, [128,128,128,4]).to(torch.float32)
-        y = torch.tensor(data["y"], dtype="float32")
+        x = x.permute(3,0,1,2)
+        y = torch.tensor(data["y"], dtype=torch.float32)
 
         if gc["data"]["apply_log"]:
             x = torch.log(x+1)
@@ -39,7 +41,7 @@ class CosmoDataset(Dataset):
         return x, y
     
 def get_train_dataloader():
-    path = os.pat.join(gc["data"]["data_dir"], "train/")
+    path = os.path.join(gc["data"]["data_dir"], "train/")
     data = CosmoDataset(path, train=True)
     if gc.world_size > 1:
         sampler = DistributedSampler(data, gc.world_size, gc.rank, shuffle=gc["data"]["shuffle"], drop_last=True)
@@ -49,13 +51,14 @@ def get_train_dataloader():
     return DataLoader(data, 
                       sampler=sampler, 
                       batch_size=local_bs, 
-                      shuffle=gc["data"]["shuffle"],
                       drop_last=True,
-                      pin_memory=True if gc.device != "cpu" else False
+                      num_workers=1,
+                      pin_memory=True if gc.device != "cpu" else False,
+                      prefetch_factor=gc["data"]["prefetch"]
                       )
 
 def get_val_dataloader():
-    path = os.pat.join(gc["data"]["data_dir"], "validation/")
+    path = os.path.join(gc["data"]["data_dir"], "validation/")
     data = CosmoDataset(path, train=False)
     if gc.world_size > 1:
         sampler = DistributedSampler(data, gc.world_size, gc.rank, shuffle=gc["data"]["shuffle"], drop_last=True)
@@ -64,10 +67,12 @@ def get_val_dataloader():
     local_bs = gc["data"]["global_batch_size"] // gc.world_size
     return DataLoader(data, 
                       sampler=sampler, 
-                      batch_size=local_bs, 
-                      shuffle=gc["data"]["shuffle"],
+                      batch_size=local_bs,
                       drop_last=True,
-                      pin_memory=True if gc.device != "cpu" else False)
+                      num_workers=1,
+                      pin_memory=True if gc.device != "cpu" else False,
+                      prefetch_factor=gc["data"]["prefetch"]
+                      )
 
 
 if __name__ == "__main__":

@@ -9,30 +9,23 @@ class SingletonMetaClass(type):
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
-            cls._instances[cls] = super(SingletonMetaClass, cls).__call__(
-                *args, **kwargs
-            )
+            cls._instances[cls] = super(SingletonMetaClass, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
 
-
 class GlobalContext(dict, metaclass=SingletonMetaClass):
+    _config_path = None
     """
     reads the yaml files and stores data as its parameters
 
-    being a singlton class prevents having to read the yaml file every time
+    being a singleton class prevents having to read the yaml file every time
     """
     def __init__(self, config_path=None):
-        super().__init__()
-        self.__dict__ = self
         if not self.__dict__:
-            with open(config_path, 'r') as stream:
-                config = yaml.safe_load(stream)
-            for k, v in config.items():
-                self[k] = v
-        
-        if self["device"] == "gpu":
-            self["device"] = "cuda"
-
+            with open(config_path, "r") as stream:
+                self.clear()
+                self.update(yaml.safe_load(stream))
+                if self["device"].lower() == 'gpu':
+                    self["device"] = "cuda"
             
     @property
     def rank(self):
@@ -41,6 +34,10 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     @property
     def world_size(self):
         return dist.get_world_size()
+    
+    @property
+    def device(self):
+        return self["device"]
     
     def log_bert(self):
         mllogger = mllog.get_mllogger()
@@ -73,3 +70,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         mllogger.event(key=log_constants.OPT_LR_DECAY_STEPS, value=self["lr_schedule"]["decay_steps"])
         mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
         mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["opt"]["weight_decay"])
+
+    def print_0(self, string):
+        if self.rank == 0:
+            print(string)

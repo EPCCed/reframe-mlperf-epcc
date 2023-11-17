@@ -1,3 +1,4 @@
+from typing import Any
 import yaml
 
 import torch.distributed as dist
@@ -10,31 +11,24 @@ class SingletonMetaClass(type):
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
-            cls._instances[cls] = super(SingletonMetaClass, cls).__call__(
-                *args, **kwargs
-            )
+            cls._instances[cls] = super(SingletonMetaClass, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
 
-
 class GlobalContext(dict, metaclass=SingletonMetaClass):
+    _config_path = None
     """
     reads the yaml files and stores data as its parameters
 
-    being a singlton class prevents having to read the yaml file every time
+    being a singleton class prevents having to read the yaml file every time
     """
     def __init__(self, config_path=None):
-        super().__init__()
-        self.__dict__ = self
         if not self.__dict__:
-            with open(config_path, 'r') as stream:
-                config = yaml.safe_load(stream)
-            for k, v in config.items():
-                self[k] = v
-        
-        if self["device"] == "gpu":
-            self["device"] = "cuda"
+            with open(config_path, "r") as stream:
+                self.clear()
+                self.update(yaml.safe_load(stream))
+                if self["device"].lower() == 'gpu':
+                    self["device"] = "cuda"
 
-            
     @property
     def rank(self):
         return dist.get_rank()
@@ -43,12 +37,16 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     def world_size(self):
         return dist.get_world_size()
     
+    @property
+    def device(self):
+        return self["device"]
+    
     def log_cosmoflow(self):
         mllogger = mllog.get_mllogger()
         mllogger.event(key=log_constants.OPT_NAME, value="SGD")
         mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
         mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["opt"]["weight_decay"])
-        mllogger.event(key="dropout", key=0.5)
+        mllogger.event(key="dropout", value=0.5)
         mllogger.event(key=log_constants.OPT_BASE_LR, value=self["lr_schedule"]["base_lr"])
         mllogger.event(key=log_constants.OPT_LR_WARMUP_EPOCHS, value=self["lr_schedule"]["n_warmup_epochs"])
         mllogger.event(key=log_constants.OPT_LR_DECAY_FACTOR, value=max(self["lr_schedule"]["decay_schedule"].values()) if len(self["lr_schedule"]["decay_schedule"])>0 else 1)
@@ -82,6 +80,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         
         mllogger.event(key="gradient_accumulation_frequency", value=1)
 
-
-
+    def print_0(self, string):
+        if self.rank == 0:
+            print(string)
 

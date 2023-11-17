@@ -3,6 +3,10 @@ import sys
 import os
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
+import time
+import warnings
+
+warnings.filterwarnings("ignore")
 
 import torch 
 import torch.nn as nn
@@ -11,9 +15,11 @@ import torch.distributed as dist
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/CosmoFlow/Torch/config.yaml")
 from ML_HPC.CosmoFlow.Torch.model.cosmoflow import StandardCosmoFlow
-from ML_HPC.CosmoFlow.Torch.data.CPU_data_loader import CosmoData
+from ML_HPC.CosmoFlow.Torch.data.TF_record_loader import get_train_dataloader, get_val_dataloader
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
 
+
+#Mean Absolute Error
 class DistributedMAE:
     def __init__(self):
         self.reset()
@@ -53,7 +59,8 @@ def main():
         local_rank = os.environ["LOCAL_RANK"]
         torch.cuda.set_device("cuda:" + local_rank)
     
-    train_data, val_data = ...
+    train_data = get_train_dataloader()
+    val_data = get_val_dataloader()
 
     model = StandardCosmoFlow().to(gc.device)
     if gc.world_size > 1:
@@ -72,6 +79,8 @@ def main():
     epoch= 0
 
     while True:
+        start = time.time()
+        print(epoch)
         model.train()
         for x, y in train_data:
             opt.zero_grad()
@@ -83,6 +92,7 @@ def main():
             loss.backward()
 
             opt.step()
+        print(loss)
         
         model.eval()
         score.reset()
@@ -92,12 +102,13 @@ def main():
                 logits = model.forward(x)
                 score.update(logits, y)
             mae = score.get_value()
-        
+        print(mae)
         epoch += 1
-        if mae >= gc["training"]["target_mae"] or epoch == gc["data"]["n_epochs"]:
+        if mae <= gc["training"]["target_mae"] or epoch == gc["data"]["n_epochs"]:
             break
         
         scheduler.step()
+        print(time.time()-start)
 
 
 if __name__ == "__main__":

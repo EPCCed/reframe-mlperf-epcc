@@ -16,4 +16,4 @@ conda activate mlperf-torch
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=4
 
-srun python /work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/train.py
+srun --hint=nomultithread --distribution=block:block python /work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/train.py
