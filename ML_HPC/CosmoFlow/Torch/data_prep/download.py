@@ -1,5 +1,5 @@
 import os
-import urllib.request 
+import urllib.request
 import shutil
 import re
 from bs4 import BeautifulSoup
@@ -12,7 +12,7 @@ def chunk_files_per_worker(files: list, n_workers: int):
     int_chunk = [files[x:x+n] for x in range(0, len(files), n)]
     if len(int_chunk) == n_workers + 1:
         remainder = int_chunk.pop()
-        for i,r in enumerate(remainder):
+        for i, r in enumerate(remainder):
             int_chunk[i].append(r)
     return int_chunk
 
