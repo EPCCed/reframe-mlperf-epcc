@@ -4,6 +4,7 @@ import os
 import random
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
+import click
 
 import torch 
 import torch.nn as nn
@@ -72,9 +73,21 @@ def run_eval(model,eval_dataloader,):
     return total_eval_loss, total_eval_mlm_acc
 
 
-def main():
-    torch.manual_seed(0)
-    random.seed(0)
+@click.command()
+@click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
+@click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
+def main(device, config):
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+    if config:
+        gc.update_config(config)
+
+    gc.log_bert()
+    gc.log_seed(1)
+    gc.start_init()
+
+    torch.manual_seed(1)
+    random.seed(1)
     if dist.is_mpi_available():
         backend = "mpi"
     elif gc.device == "cuda":
@@ -133,7 +146,11 @@ def main():
 
     eval_dataloader = get_eval_dataset()
 
+    gc.stop_init()
+    gc.start_run()
+
     while True:
+        gc.start_epoch(metadata={"epoch_num": epoch+1})
         for file in my_files:
             dataloader = get_pretrian_dataloader(file)
             for batch in dataloader:
@@ -149,12 +166,21 @@ def main():
 
                 opt.step()
                 lr_scheduler.step()
+        gc.log_event(key="learning_rate", value=lr_scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
+        gc.log_event(key="train_loss", value=loss, metadata={"epoch_num": epoch+1})
 
+        gc.start_eval(metadata={"epoch_num": epoch+1})
         eval_loss, eval_accuracy = run_eval(model, eval_dataloader)
+        gc.log_event(key="eval_loss", value=eval_loss, metadata={"epoch_num": epoch+1})
+        gc.log_event(key="eval_accuracy", value=eval_accuracy, metadata={"epoch_num": epoch+1})
 
         stop_training = eval_accuracy >= gc["training"]["target_mlm_accuracy"]
+
+        gc.stop_epoch(metadata={"epoch_num": epoch+1})
         epoch+=1
         if epoch >= gc["data"]["n_epochs"] or stop_training:
+            gc.log_event(key="target_mlm_accuracy_reached", value=gc["training"]["target_mlm_accuracy"], metadata={"epoch_num": epoch+1})
+            gc.stop_run()
             break
 
         random.shuffle(files)

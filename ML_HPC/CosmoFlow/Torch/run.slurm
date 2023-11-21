@@ -1,10 +1,10 @@
 #!/bin/bash
 
 #SBATCH --job-name=mlperf-cosmoflow-benchmark
-#SBATCH --time=01:00:00
-#SBATCH --nodes=1
-#SBATCH --tasks-per-node=4
-#SBATCH --cpus-per-task=32
+#SBATCH --time=00:30:00
+#SBATCH --nodes=16
+#SBATCH --tasks-per-node=32
+#SBATCH --cpus-per-task=4
 
 #SBATCH --partition=standard
 #SBATCH --qos=standard

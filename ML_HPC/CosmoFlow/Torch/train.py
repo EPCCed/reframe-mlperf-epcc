@@ -5,8 +5,8 @@ path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
 import time
 import warnings
-
 warnings.filterwarnings("ignore")
+import click
 
 import torch 
 import torch.nn as nn
@@ -45,8 +45,20 @@ class DistributedMAE:
             dist.all_reduce(info_tensor)
             return (info_tensor[0]/ info_tensor[1]).item()
 
-def main():
-    torch.manual_seed(0)
+@click.command()
+@click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
+@click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
+def main(device, config):
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+    if config:
+        gc.update_config(config)
+    
+    gc.log_cosmoflow()
+    gc.start_init()
+    gc.log_seed(1)
+
+    torch.manual_seed(1)
     if dist.is_mpi_available():
         backend = "mpi"
     elif gc.device == "cuda":
@@ -74,14 +86,16 @@ def main():
     scheduler = CosmoLRScheduler(opt)
 
     criterion = nn.MSELoss()
+    
+    gc.stop_init()
+    gc.start_run()
 
     score = DistributedMAE()
     epoch= 0
 
     while True:
-        start = time.time()
-        print(epoch)
         model.train()
+        gc.start_epoch(metadata={"epoch_num": epoch+1})
         for x, y in train_data:
             opt.zero_grad()
 
@@ -92,23 +106,34 @@ def main():
             loss.backward()
 
             opt.step()
-        print(loss)
         
+        gc.log_event(key="learning_rate", value=scheduler.get_last_lr[0], metadata={"epoch_num": epoch+1})
+        gc.log_event(key="train_loss", value=loss, metadata={"epoch_num": epoch+1})
+
+        gc.start_eval(metadata={"epoch_num": epoch+1})
         model.eval()
         score.reset()
+        avg_eval_loss = 0
         with torch.no_grad():
             for x, y in val_data:
                 x, y = x.to(gc.device), y.to(gc.device)
                 logits = model.forward(x)
+                avg_eval_loss += criterion.forward(logits, y)
                 score.update(logits, y)
             mae = score.get_value()
-        print(mae)
+
+            gc.log_event(key="eval_loss", value=avg_eval_loss/len(val_data), metadata={"epoch_num": epoch+1})
+            gc.log_event(key="eval_mae", value=mae, metadata={"epoch_num": epoch+1})
+        gc.stop_eval(lmetadata={"epoch_num": epoch+1})
+        gc.stop_epoch(metadata={"epoch_num": epoch+1})
+        
         epoch += 1
         if mae <= gc["training"]["target_mae"] or epoch == gc["data"]["n_epochs"]:
+            gc.log_event(key="target_mae_reached", value=gc["training"]["target_mae"], metadata={"epoch_num": epoch+1})
+            gc.stop_run()
             break
         
         scheduler.step()
-        print(time.time()-start)
 
 
 if __name__ == "__main__":
