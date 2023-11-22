@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 import sys
+import click
 
 import torch
 import torch.distributed as dist
@@ -37,7 +38,15 @@ def valid_step(x, y, model, loss_fn, metric_tracker):
         return loss
 
 
-def main():
+@click.command()
+@click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
+@click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
+def main(device, config):
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+    if config:
+        gc.update_config(config)
+    
     torch.manual_seed(0)
     if dist.is_mpi_available():
         backend = "mpi"

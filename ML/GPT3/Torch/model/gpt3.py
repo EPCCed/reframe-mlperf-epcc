@@ -264,3 +264,16 @@ def get_gpt3_13b(vocab_size, pad_idx):
         dropout=0.1,
         bidirectional=True
     )
+
+def get_gpt3_175b(vocab_size, pad_idx):
+    return Transformer(
+        layers=96,
+        pad_idx=pad_idx,
+        words=vocab_size,
+        seq_len=2048,
+        heads=96,
+        dims=12288,
+        rate=4, # used in pwise ff
+        dropout=0.0,
+        bidirectional=True
+    )

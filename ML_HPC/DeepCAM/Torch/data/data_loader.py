@@ -25,6 +25,7 @@ import glob
 import h5py as h5
 import numpy as np
 
+import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data import DistributedSampler
@@ -152,13 +153,22 @@ class CamDataset(Dataset):
         
         return data, label, filename
 
+class DummyDataset(Dataset):
+    def __init__(self, n_samples):
+        self.n_samples = n_samples
+    
+    def __len__(self):
+        return self.n_samples
+
+    def __getitem__(self, idx):
+        return torch.ones(16, 768, 1152),  torch.ones(3, 768, 1152), "file.txt"
+
 
 def get_datashapes():
     return peek_shapes_hdf5(os.path.join(gc["data"]["data_dir"], "train"))
 
 
 def get_dataloaders():
-    
     # import only what we need
     train_dir = os.path.join(gc["data"]["data_dir"], "train")
     train_set = CamDataset(train_dir, 
@@ -177,11 +187,12 @@ def get_dataloaders():
                                                    drop_last = True)
     
     train_loader = DataLoader(train_set,
-                              gc["data"]["global_batch_size"] // gc.world_size,
-                              num_workers =gc.world_size,
+                              batch_size=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"],
+                              num_workers =1,
                               sampler = distributed_train_sampler,
                               pin_memory = True if gc.device != "cpu" else False,
-                              drop_last = True)
+                              drop_last = True,
+                              prefetch_factor=gc["data"]["prefetch"])
 
     train_size = train_set.global_size
 
@@ -197,11 +208,45 @@ def get_dataloaders():
     
     # use batch size = 1 here to make sure that we do not drop a sample
     validation_loader = DataLoader(validation_set,
-                                   1,
-                                   num_workers = gc.world_size,
+                                   batch_size=1,
+                                   num_workers = 1,
                                    pin_memory = True if gc.device != "cpu" else False,
-                                   drop_last = False)
+                                   drop_last = False,
+                                   prefetch_factor=gc["data"]["prefetch"])
     
     validation_size = validation_set.global_size    
+        
+    return train_loader, train_size, validation_loader, validation_size
+
+def get_dummy_dataloaders(n_samples):
+    train_set = DummyDataset(n_samples=n_samples)
+    
+    distributed_train_sampler = DistributedSampler(train_set,
+                                                   num_replicas = gc.world_size,
+                                                   rank = gc.rank,
+                                                   shuffle = True,
+                                                   drop_last = True)
+    
+    train_loader = DataLoader(train_set,
+                              batch_size=gc["data"]["global_batch_size"] // gc.world_size//gc["data"]["gradient_accumulation"],
+                              num_workers =1,
+                              sampler = distributed_train_sampler,
+                              pin_memory = True if gc.device != "cpu" else False,
+                              drop_last = True,
+                              prefetch_factor=gc["data"]["prefetch"])
+
+    train_size = 0
+
+    validation_set = DummyDataset(n_samples=n_samples)
+    
+    # use batch size = 1 here to make sure that we do not drop a sample
+    validation_loader = DataLoader(validation_set,
+                                   batch_size=1,
+                                   num_workers = 1,
+                                   pin_memory = True if gc.device != "cpu" else False,
+                                   drop_last = False,
+                                   prefetch_factor=gc["data"]["prefetch"])
+    
+    validation_size = 0   
         
     return train_loader, train_size, validation_loader, validation_size

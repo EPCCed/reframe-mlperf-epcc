@@ -35,7 +35,7 @@ have_gbn = True
 try:
     from apex.contrib.cudnn_gbn import GroupBatchNorm2d as GroupBN
 except ImportError:
-    print("Warning, APEX GBN not detected")
+    #print("Warning, APEX GBN not detected")
     from torch.nn import SyncBatchNorm as GroupBN
     have_gbn = False
 

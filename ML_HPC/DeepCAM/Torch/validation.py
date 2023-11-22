@@ -44,8 +44,9 @@ def compute_score(prediction: torch.Tensor, gt: torch.Tensor, num_classes: int) 
         return iout
 
 
-def validate(net, criterion, validation_loader):
+def validate(net, criterion, validation_loader, epoch):
     #eval
+    gc.start_eval()
     net.eval()
 
     count_sum_val = torch.zeros((1), dtype=torch.float32, device=gc.device)
@@ -87,15 +88,19 @@ def validate(net, criterion, validation_loader):
             dist.all_reduce(count_sum_val, op=dist.ReduceOp.SUM, async_op=False)
             dist.reduce(loss_sum_val, dst=0, op=dist.ReduceOp.SUM)
             dist.all_reduce(iou_sum_val, op=dist.ReduceOp.SUM, async_op=False)
+        loss_avg_val = loss_sum_val.item() / count_sum_val.item()
         iou_avg_val = iou_sum_val.item() / count_sum_val.item()
 
-    # print results
+    gc.log_event(key="eval_accuracy", value=iou_avg_val, metadata={"epoch": epoch+1})
+    gc.log_event(key="eval_loss", value=loss_avg_val, metadata={"epoch": epoch+1})
 
     stop_training = False
     if (iou_avg_val >= gc["training"]["target_iou"]):
         stop_training = True
+        gc.log_event(key="target_accuracy_reached", value=gc["training"]["target_iou"], metadata={"epoch": epoch+1})
 
     # set to train
+    gc.stop_eval()
     net.train()
     
     return stop_training
