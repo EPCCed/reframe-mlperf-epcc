@@ -53,10 +53,6 @@ def main(device, config):
         gc["device"] = device.lower()
     if config:
         gc.update_config(config)
-    
-    gc.log_cosmoflow()
-    gc.start_init()
-    gc.log_seed(1)
 
     torch.manual_seed(1)
     if dist.is_mpi_available():
@@ -66,6 +62,10 @@ def main(device, config):
     else:
         backend = "gloo"
     dist.init_process_group(backend)
+
+    gc.log_cosmoflow()
+    gc.start_init()
+    gc.log_seed(1)
 
     if gc.device == "cuda":
         local_rank = os.environ["LOCAL_RANK"]
@@ -79,7 +79,7 @@ def main(device, config):
         model = nn.parallel.DistributedDataParallel(model)
     
     if gc["opt"]["name"].upper() == "SGD":
-        opt = torch.optim.SGD(model.parameters(), lr=gc["lr_schedule"]["base_lr"], momentum=gc["opt"]["momentum"])
+        opt = torch.optim.SGD(model.parameters(), lr=gc["lr_schedule"]["base_lr"], momentum=gc["opt"]["momentum"], weight_decay=gc["opt"]["weight_decay"])
     else:
         raise NameError(f"Optimiser {gc['opt']['name']} not supported please use SGD")
 
@@ -95,41 +95,45 @@ def main(device, config):
 
     while True:
         model.train()
-        gc.start_epoch(metadata={"epoch_num": epoch+1})
-        for x, y in train_data:
-            opt.zero_grad()
+        with gc.profiler(f"Epoch: {epoch+1}") as prof:
+            gc.start_epoch(metadata={"epoch_num": epoch+1})
+            for x, y in train_data:
+                opt.zero_grad()
 
-            x, y = x.to(gc.device), y.to(gc.device)
-
-            logits = model.forward(x)
-            loss = criterion.forward(logits, y)
-            loss.backward()
-
-            opt.step()
-        
-        gc.log_event(key="learning_rate", value=scheduler.get_last_lr[0], metadata={"epoch_num": epoch+1})
-        gc.log_event(key="train_loss", value=loss, metadata={"epoch_num": epoch+1})
-
-        gc.start_eval(metadata={"epoch_num": epoch+1})
-        model.eval()
-        score.reset()
-        avg_eval_loss = 0
-        with torch.no_grad():
-            for x, y in val_data:
                 x, y = x.to(gc.device), y.to(gc.device)
-                logits = model.forward(x)
-                avg_eval_loss += criterion.forward(logits, y)
-                score.update(logits, y)
-            mae = score.get_value()
 
-            gc.log_event(key="eval_loss", value=avg_eval_loss/len(val_data), metadata={"epoch_num": epoch+1})
-            gc.log_event(key="eval_mae", value=mae, metadata={"epoch_num": epoch+1})
-        gc.stop_eval(lmetadata={"epoch_num": epoch+1})
-        gc.stop_epoch(metadata={"epoch_num": epoch+1})
+                logits = model.forward(x)
+                loss = criterion.forward(logits, y)
+                loss.backward()
+
+                opt.step()
+            
+            gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
+            gc.log_event(key="train_loss", value=loss.item(), metadata={"epoch_num": epoch+1})
+
+            gc.start_eval(metadata={"epoch_num": epoch+1})
+            model.eval()
+            score.reset()
+            avg_eval_loss = 0
+            with torch.no_grad():
+                for x, y in val_data:
+                    x, y = x.to(gc.device), y.to(gc.device)
+                    logits = model.forward(x)
+                    avg_eval_loss += criterion.forward(logits, y)
+                    score.update(logits, y)
+                mae = score.get_value()
+
+                gc.log_event(key="eval_loss", value=(avg_eval_loss/len(val_data)).item(), metadata={"epoch_num": epoch+1})
+                gc.log_event(key="eval_mae", value=mae, metadata={"epoch_num": epoch+1})
+            gc.stop_eval(metadata={"epoch_num": epoch+1})
+            gc.stop_epoch(metadata={"epoch_num": epoch+1})
+        if gc.rank == 0:
+            print(prof.key_averages().table(sort_by="cpu_time_total"))
         
         epoch += 1
         if mae <= gc["training"]["target_mae"] or epoch == gc["data"]["n_epochs"]:
-            gc.log_event(key="target_mae_reached", value=gc["training"]["target_mae"], metadata={"epoch_num": epoch+1})
+            if mae <= gc["training"]["target_mae"]:
+                gc.log_event(key="target_mae_reached", value=gc["training"]["target_mae"], metadata={"epoch_num": epoch+1})
             gc.stop_run()
             break
         

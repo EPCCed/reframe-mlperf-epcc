@@ -57,7 +57,6 @@ def main(device, config):
     if config:
         gc.update_config(config)
 
-    gc.log_deepcam()
 
     torch.manual_seed(333)
     if dist.is_mpi_available():
@@ -68,6 +67,7 @@ def main(device, config):
         backend = "gloo"
     dist.init_process_group(backend)
 
+    gc.log_deepcam()
     gc.log_seed(333)
 
     if gc.device == "cuda":

@@ -61,6 +61,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     @_run_on_0
     def log_bert(self):
         mllogger = mllog.get_mllogger()
+        self.mllogger.default_namespace = "bert"
         mllogger.event(key=log_constants.BERT)
         mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"])
         mllogger.event(key=log_constants.GLOBAL_BATCH_SIZE, value=self["data"]["global_batch_size"])
@@ -78,6 +79,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     @_run_on_0
     def log_resnet(self):
         mllogger = mllog.get_mllogger()
+        self.mllogger.default_namespace = "resnet"
         mllogger.event(key=log_constants.RESNET)
         if self["opt"]["name"].upper() == "SGD":
             mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"].upper())
@@ -98,7 +100,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     def log_cluster_info(self):
         self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
         self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        self.mllogger.event(key="accelerators_per_node", value=int(os.environ("SLURM_NTASKS_PER_NODE")))
+        self.mllogger.event(key="accelerators_per_node", value=int(os.environ["SLURM_NTASKS_PER_NODE"]))
 
     @_run_on_0
     def print_0(self, *args, **kwargs):

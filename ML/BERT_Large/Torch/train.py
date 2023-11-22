@@ -82,10 +82,6 @@ def main(device, config):
     if config:
         gc.update_config(config)
 
-    gc.log_bert()
-    gc.log_seed(1)
-    gc.start_init()
-
     torch.manual_seed(1)
     random.seed(1)
     if dist.is_mpi_available():
@@ -99,6 +95,10 @@ def main(device, config):
     if gc.device == "cuda":
         local_rank = os.environ["LOCAL_RANK"]
         torch.cuda.set_device("cuda:" + local_rank)
+
+    gc.log_bert()
+    gc.log_seed(1)
+    gc.start_init()
 
     model = get_bertlarge().to(gc.device)
     if gc.world_size > 1:
@@ -167,12 +167,12 @@ def main(device, config):
                 opt.step()
                 lr_scheduler.step()
         gc.log_event(key="learning_rate", value=lr_scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
-        gc.log_event(key="train_loss", value=loss, metadata={"epoch_num": epoch+1})
+        gc.log_event(key="train_loss", value=loss.item(), metadata={"epoch_num": epoch+1})
 
         gc.start_eval(metadata={"epoch_num": epoch+1})
         eval_loss, eval_accuracy = run_eval(model, eval_dataloader)
-        gc.log_event(key="eval_loss", value=eval_loss, metadata={"epoch_num": epoch+1})
-        gc.log_event(key="eval_accuracy", value=eval_accuracy, metadata={"epoch_num": epoch+1})
+        gc.log_event(key="eval_loss", value=eval_loss.item(), metadata={"epoch_num": epoch+1})
+        gc.log_event(key="eval_accuracy", value=eval_accuracy.item(), metadata={"epoch_num": epoch+1})
 
         stop_training = eval_accuracy >= gc["training"]["target_mlm_accuracy"]
 

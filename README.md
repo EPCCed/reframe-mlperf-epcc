@@ -7,7 +7,7 @@ ML | Natural Language Processing | Bert-Large | Wikipedia 2020/01/01 | 335,174,4
 ML | Large Language Model | GPT-J | C4 | 6,053,381,344 | 96,854 | 750
 ML | Image Classification | ResNet50 v1.5 | ImageNet-1k | 25,557,032 | 409 | 400
 ML HPC | Cosmology Parameter Prediction | CosmoFlow | CosmoFlow N-body simulation | 8,907,556 | 71 | 5,100
-ML HPC | Climate segmentation | DeepLabV3+ | CAM5+TECA | 56,454,720 | 903 | ?
+ML HPC | Climate segmentation | DeepLabV3+ | CAM5+TECA | 56,454,720 | 903 | 8,800
 ML HPC | Protein Folding | AlphaFold2 | OpenProteinSet and Protein Data Bank | "92,400,000" | "1478.4" | 2600
 
 

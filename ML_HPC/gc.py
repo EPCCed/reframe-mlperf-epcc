@@ -23,7 +23,7 @@ def _run_on_0(func):
                 dist.barrier()
         if dist.get_rank() == 0:
             return func(*args, **kwrags)
-        return wrapper
+    return wrapper
 
 class GlobalContext(dict, metaclass=SingletonMetaClass):
     _config_path = None
@@ -62,6 +62,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     @_run_on_0
     def log_cosmoflow(self):
         self.mllogger = mllog.get_mllogger()
+        self.mllogger.default_namespace = "cosmoflow"
         self.mllogger.event(key=log_constants.OPT_NAME, value="SGD")
         self.mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
         self.mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["opt"]["weight_decay"])
@@ -74,6 +75,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     @_run_on_0
     def log_deepcam(self):
         self.mllogger = mllog.get_mllogger()
+        self.mllogger.default_namespace = "deepcam"
         self.mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"].upper())
         if self["opt"]["name"].upper() == "ADAM":
             self.mllogger.event(key=log_constants.OPT_ADAM_EPSILON, value=1.0e-6)
@@ -106,7 +108,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     def log_cluster_info(self):
         self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
         self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        self.mllogger.event(key="accelerators_per_node", value=int(os.environ("SLURM_NTASKS_PER_NODE")))
+        self.mllogger.event(key="accelerators_per_node", value=int(os.environ["SLURM_NTASKS_PER_NODE"]))
 
     @_run_on_0
     def print_0(self, *args, **kwargs):
@@ -140,6 +142,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @_run_on_0
     def start_run(self, sync=True):
+        print("\n")
         self.mllogger.start(key=log_constants.RUN_START, value=None)
     
     @_run_on_0
