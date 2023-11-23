@@ -1,7 +1,7 @@
 #!/bin/bash
 #SBATCH --job-name=mlperf-CosmoFlow        # Job name
-#SBATCH --tasks-per-node=8        # There is only one node on SDF-CS1
-#SBATCH --cpus-per-task=16        # Each cpu is a core
+#SBATCH --tasks-per-node=1        # There is only one node on SDF-CS1
+#SBATCH --cpus-per-task=128        # Each cpu is a core
 #SBATCH --gres=cs:1               # Request CS-2 system
 #SBATCH --output=example_%j.log   # Standard output and error log
 #SBATCH --time=01:00:00           # Set time limit for this job to 1 hour
