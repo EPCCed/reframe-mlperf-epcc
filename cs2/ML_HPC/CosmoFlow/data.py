@@ -41,7 +41,7 @@ def get_train_dataloader(params):
     data = CosmoDataset(params["data_dir"], train=True)
     return DataLoader(data, 
                       batch_size=params["batch_size"], 
-                      drop_last=params["drop_last"],
+                      drop_last=params["drop_last_batch"],
                       shuffle=params["shuffle"],
                       num_workers=params.get("num_workers", 0)
                       )
@@ -51,6 +51,6 @@ def get_val_dataloader():
     data = CosmoDataset(params["data_dir"], train=True)
     return DataLoader(data, 
                       batch_size=params["batch_size"], 
-                      drop_last=params["drop_last"],
+                      drop_last=params["drop_last_batch"],
                       num_workers=params.get("num_workers", 0)
                       )

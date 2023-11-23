@@ -1,11 +1,11 @@
 train_input:
-    data_dir: ""
+    data_dir: "/home/z043/z043/crae-cs1/data/cosmoUniverse_2019_05_4parE_tf_v2_mini/train"
     batch_size: 128
     drop_last_batch: True
     shuffle: True
 
 eval_input:
-    data_dir: ""
+    data_dir: "/home/z043/z043/crae-cs1/data/cosmoUniverse_2019_05_4parE_tf_v2_mini/validation"
     batch_size: 128
     drop_last_batch: True
 
