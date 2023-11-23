@@ -1,4 +1,5 @@
 import os
+import sys
 
 import torch
 from torch.utils.data import Dataset, DataLoader, DistributedSampler, RandomSampler
@@ -6,11 +7,7 @@ from tfrecord.reader import tfrecord_loader
 
 class CosmoDataset(Dataset):
     def __init__(self, dataset_path, train=True):
-        if train:
-            size = gc["data"]["n_train"]
-        else:
-            size = gc["data"]["n_eval"]
-        self.files = os.listdir(dataset_path)[:size]
+        self.files = os.listdir(dataset_path)
         self.root = dataset_path
         self.length = len(self.files)
     
@@ -22,14 +19,14 @@ class CosmoDataset(Dataset):
         data = next(tfrecord_loader(os.path.join(self.root, self.files[index]),
                                     None,
                                     description={"x": "byte", "y":"float"},
-                                    compression_type=gc["data"]["compression"]
+                                    compression_type="gzip"
                                     ))
         x = torch.frombuffer(data["x"], dtype=torch.int16)
         x = torch.reshape(x, [128,128,128,4]).to(torch.float32)
         x = x.permute(3,0,1,2)
         y = torch.tensor(data["y"], dtype=torch.float32)
 
-        if gc["data"]["apply_log"]:
+        if False:
             x = torch.log(x+1)
         else:
             x /= (torch.sum(x)/torch.prod(torch.tensor(x.shape)))

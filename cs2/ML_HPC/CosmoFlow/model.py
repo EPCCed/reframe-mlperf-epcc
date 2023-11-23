@@ -1,21 +1,25 @@
+import sys
+sys.path.append("/home/z043/z043/crae-cs1/chris-ml-intern/cs2/modelzoo") # Adds higher directory to python modules path.
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from ...modelzoo.modelzoo.common.pytorch.PyTorchBaseModel import PyTorchBaseModel
+from modelzoo.common.pytorch.PyTorchBaseModel import PyTorchBaseModel
+
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, k_size):
         super().__init__()
         self.conv = nn.Conv3d(in_channels, out_channels, kernel_size=k_size, padding=1)
         self.act = nn.LeakyReLU(negative_slope=0.3)
-        self.pool = nn.MaxPool3d(kernel_size=2, stride=2)
+        self.pool = nn.MaxPool3d(2,2)
 
         torch.nn.init.xavier_uniform_(self.conv.weight)
         torch.nn.init.zeros_(self.conv.bias)
     
     def forward(self, x):
-        return self.pool(self.act(self.conv(x)))
+        return self.pool(self.act(self.conv(x)))  # ,(2,2,2),(2,2,2))
 
 class StandardCosmoFlow(nn.Module):
     def __init__(self, k_size=3, n_layers=5, n_filters=32):
@@ -47,14 +51,12 @@ class StandardCosmoFlow(nn.Module):
         x = x.permute(0,2,3,4,1).flatten(1)
         
         x = F.leaky_relu(self.l1(x), negative_slope=0.3)
-        if self.dropout:
-            x = self.d1(x)
+        x = self.d1(x)
         
         x = F.leaky_relu(self.l2(x), negative_slope=0.3)
-        if self.dropout:
-            x = self.d2(x)
+        x = self.d2(x)
 
-        return F.tanh(self.lO(x)) * 1.2
+        return torch.tanh(self.lO(x)) * 1.2
      
 class CosmoFlowModel(PyTorchBaseModel):
     def __init__(self, params, device=None):

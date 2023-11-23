@@ -1,9 +1,9 @@
 import os
 import sys
+sys.path.append("/home/z043/z043/crae-cs1/chris-ml-intern/cs2/modelzoo")
 
-#Append path to parent directory of Cerebras ModelZoo Repository
-sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
-from ...modelzoo.modelzoo.common.pytorch.run_utils import run
+#Append path to parent directory of Cerebras ModelZoo Repos
+from modelzoo.common.pytorch.run_utils import run
 
 from data import (
     get_train_dataloader,
