@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from cerebras_modelzoo_common.pytorch.PyTorchBaseModel.py import PyTorchBaseModel
+from ...modelzoo.modelzoo.common.pytorch.PyTorchBaseModel import PyTorchBaseModel
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, k_size):
