@@ -28,6 +28,9 @@ conda install mkl mkl-include
 ```
 
 # Define *build.slurm*
+
+This could be done with an interactive node
+
 ```bash
 #!/bin/bash (build.slurm)
 
@@ -63,6 +66,4 @@ python setup.py develop
 ```bash
 sbatch build.slurm
 ```
-
-### and not pytorch has been built 
                                                     
