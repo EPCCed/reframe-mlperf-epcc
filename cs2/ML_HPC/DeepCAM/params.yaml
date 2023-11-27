@@ -1,0 +1,10 @@
+train_input:
+    data_dir: ""
+    batch_size: 128
+    drop_last_batch: True
+    shuffle: True
+
+eval_input:
+    data_dir: ""
+    batch_size: 128
+    drop_last_batch: True
