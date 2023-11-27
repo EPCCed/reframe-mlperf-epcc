@@ -1,22 +1,20 @@
 import os
 from pathlib import Path
 import sys
+path_root = Path(__file__).parents[3]
+sys.path.append(str(path_root))
 import click
 
 import torch
 import torch.distributed as dist
-from flash.core.optimizers import LARS
 import torchmetrics
 
-path_root = Path(__file__).parents[3]
-sys.path.append(str(path_root))
-
 from ML.gc import GlobalContext
-
 gc = GlobalContext(
-    "/work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/config.yaml"
+    "/work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/config.yaml"
 )
 import ML.ResNet50.Torch.data.data_loader as dl
+from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
 
 
@@ -54,14 +52,15 @@ def main(device, config):
         backend = "nccl"
     else:
         backend = "gloo"
+    print(backend)
     dist.init_process_group(backend)
 
     if gc.device == "cuda":
         local_rank = os.environ["LOCAL_RANK"]
         torch.cuda.set_device("cuda:" + local_rank)
 
-    train_data = dl.get_imagenet_dataloader("train")
-    val_data = dl.get_imagenet_dataloader("val")
+    train_data = dl.get_train_dataloader()
+    val_data = dl.get_val_dataloader()
 
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
