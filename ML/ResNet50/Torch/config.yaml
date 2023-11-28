@@ -2,7 +2,7 @@ device: cpu
 
 data:
     data_dir: /work/z043/z043/shared/imagenet-1k/huggingface/data
-    global_batch_size: 16
+    global_batch_size: 256
     drop_last_batch: True
     shuffle: True
     n_epochs: 128

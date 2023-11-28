@@ -1,14 +1,13 @@
 #!/bin/bash
 
 #SBATCH --job-name=mlperf-resnet-benchmark
-#SBATCH --time=02:00:00
+#SBATCH --time=01:00:00
 #SBATCH --exclusive
-#SBATCH --nodes=16
-#SBATCH --tasks-per-node=4
-#SBATCH --cpus-per-task=9
+#SBATCH --nodes=2
 
-#SBATCH --partition=standard
-#SBATCH --qos=standard
+#SBATCH --partition=gpu
+#SBATCH --qos=gpu
+#SBATCH --gres=gpu:4
 #SBATCH --account=z043
 
 eval "$(/work/z043/z043/crae/miniconda3/bin/conda shell.bash hook)"
@@ -21,4 +20,4 @@ export OMPI_MCA_mpi_warn_on_fork=0
 export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
 export OMP_NUM_THREADS=8
 
-srun --hint=nomultithread --distribution=block:block python /work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/train.py
+srun --ntasks=8 --tasks-per-node=4 python /work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/train.py --device cuda

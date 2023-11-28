@@ -7,7 +7,8 @@ import click
 
 import torch
 import torch.distributed as dist
-import torchmetrics
+from torchmetrics.classification import Accuracy
+from tqdm import tqdm
 
 from ML.gc import GlobalContext
 gc = GlobalContext(
@@ -22,7 +23,7 @@ def train_step(x, y, model, loss_fn, opt, metric_tracker):
     opt.zero_grad()
     logits = model(x)
     loss = loss_fn(logits, y)
-    metric_tracker(logits, y)
+    metric_tracker.update(logits, y)
     loss.backward()
     opt.step()
     return loss
@@ -52,15 +53,20 @@ def main(device, config):
         backend = "nccl"
     else:
         backend = "gloo"
-    print(backend)
     dist.init_process_group(backend)
+    print(f"Hello From Rank {gc.rank}")
 
     if gc.device == "cuda":
-        local_rank = os.environ["LOCAL_RANK"]
-        torch.cuda.set_device("cuda:" + local_rank)
+        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+        print(f"G Rank {gc.rank}, L Rank {local_rank}")
+        torch.cuda.set_device("cuda:" + str(local_rank))
 
     train_data = dl.get_train_dataloader()
     val_data = dl.get_val_dataloader()
+    if gc.rank == 0:
+        train_data = tqdm(train_data, unit="images", unit_scale=gc["data"]["global_batch_size"] // gc.world_size)
+        val_data = tqdm(val_data)
 
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
@@ -95,12 +101,8 @@ def main(device, config):
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    train_metric = torchmetrics.classification.Accuracy(
-        task="multiclass", num_classes=1000
-    )
-    val_metric = torchmetrics.classification.Accuracy(
-        task="multiclass", num_classes=1000
-    )
+    train_metric = Accuracy(task="multiclass", num_classes=1000)
+    val_metric = Accuracy(task="multiclass", num_classes=1000)
 
     train_metric.to(gc.device)
     val_metric.to(gc.device)
@@ -109,14 +111,23 @@ def main(device, config):
 
     for E in range(1, gc["data"]["n_epochs"]+1):
         for i, (x, y) in enumerate(train_data):
-            print(x.shape, y.shape)
             x, y = x.to(gc.device), y.to(gc.device)
             loss = train_step(x, y, model, loss_fn, opt, train_metric)
+        
+        train_accuracy = train_metric.compute()
+        dist.reduce(train_accuracy, 0)
+        if gc.rank == 0:
+            print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
+            print(f"Train Loss at Epoch {E}: {loss}")
 
         if E % 4 == 0:
             for x, y in val_data:
                 loss = valid_step(x, y, model, loss_fn, val_metric)
-                print(f"Loss at Epoch {E}: {loss}")
+            val_accuracy = val_metric.compute()
+            dist.reduce(val_accuracy, 0)
+            if gc.rank == 0:
+                print(f"Train Accuracy at Epoch {E}: {val_accuracy/gc.world_size}")
+                print(f"Validation Loss at Epoch {E}: {loss}")
         scheduler.step()
 
 

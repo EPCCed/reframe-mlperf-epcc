@@ -3,11 +3,13 @@ train_input:
     batch_size: 32
     drop_last_batch: True
     shuffle: True
+    to_float16: True
 
 eval_input:
     data_dir: "/home/z043/z043/crae-cs1/data/"
     batch_size: 32
     drop_last_batch: True
+    to_float16: True
 
 model:
     name: "ResNet50"
