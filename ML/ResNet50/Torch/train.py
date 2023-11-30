@@ -3,7 +3,9 @@ from pathlib import Path
 import sys
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
+import csv
 import click
+import time
 
 import torch
 import torch.distributed as dist
@@ -59,12 +61,11 @@ def main(device, config):
     if gc.device == "cuda":
         taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
         local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-        print(f"G Rank {gc.rank}, L Rank {local_rank}")
         torch.cuda.set_device("cuda:" + str(local_rank))
 
     train_data = dl.get_train_dataloader()
     val_data = dl.get_val_dataloader()
-    if gc.rank == 0:
+    if gc.rank == 0:  # change to -1 to turn off
         train_data = tqdm(train_data, unit="images", unit_scale=gc["data"]["global_batch_size"] // gc.world_size)
         val_data = tqdm(val_data)
 
@@ -109,7 +110,9 @@ def main(device, config):
 
     model.train()
 
-    for E in range(1, gc["data"]["n_epochs"]+1):
+    E = 1
+    while True:
+        start = time.time()
         for i, (x, y) in enumerate(train_data):
             x, y = x.to(gc.device), y.to(gc.device)
             loss = train_step(x, y, model, loss_fn, opt, train_metric)
@@ -119,15 +122,31 @@ def main(device, config):
         if gc.rank == 0:
             print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
+            print(f"Processing Speed: {(time.time()-start)/len(train_data)}")
+            with open("./results.csv", "r", newline="") as file:
+                reader = csv.reader(file)
+            with open("./results.csv", "w", newline="") as file:
+                writer = csv.writer(file)
+                new_row = ["cirrus", gc.device, gc["data"]["global_batch_size"], gc.world_size, int(os.environ["SLURM_NNODES"]), len(train_data), (time.time()-start)/len(train_data)]
+                for row in reader:
+                    writer.writerow(row)
+                writer.writerow(new_row)
+        exit()
+
+
 
         if E % 4 == 0:
             for x, y in val_data:
                 loss = valid_step(x, y, model, loss_fn, val_metric)
             val_accuracy = val_metric.compute()
-            dist.reduce(val_accuracy, 0)
+            dist.all_reduce(val_accuracy)
             if gc.rank == 0:
                 print(f"Train Accuracy at Epoch {E}: {val_accuracy/gc.world_size}")
                 print(f"Validation Loss at Epoch {E}: {loss}")
+        E += 1
+        if "val_accuracy" in dir(): 
+            if E == gc["data"]["n_epochs"] or val_accuracy/gc.world_size >= gc["training"]["target_accuracy"]:
+                break
         scheduler.step()
 
 

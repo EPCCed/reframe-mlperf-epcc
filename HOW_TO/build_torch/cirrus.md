@@ -22,8 +22,11 @@ git submodule update --init --recursive
 ```bash
 source $PREFIX/miniconda/bin/activate mlperf-torch
 conda install -c "nvidia/label/cuda-11.6.0" cuda-toolkit
-conda install -c "nvidia/label/cuda-11.6.0" cudnn # conda install -c "nvidia/label/cuda-11.6.0" nccl
-conda install -c "nvidia/label/cuda-11.6.0" nccl # conda install -c "nvidia/label/legacy" nccl
+conda install -c nvidia cudatoolkit=11.6
+conda install -c nvidia cudnn
+conda install -c "nvidia/label/broken" nccl
+conda install -c "nvidia/label/cuda-11.6.0" libcusparse-dev
+conda install -c "nvidia/label/cuda-11.6.0" libcusolver-dev
 conda install cmake ninja
 #cd into pytorch if not already
 pip install -r requirements.txt
@@ -42,6 +45,7 @@ export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 export PATH=$CONDA_PREFIX/bin:$PATH
 export CUDA_NVCC_EXECUTABLE=$CONDA_PREFIX/bin/nvcc
 export CUDA_BIN_PATH=$CONDA_PREFIX/bin
+export CUDA_HOME=$CONDA_PREFIX
 export LDFLAGS=-L/$CONDA_PREFIX/lib
 module unload cmake
 module swap gcc gcc/10.2.0

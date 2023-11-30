@@ -1,8 +1,9 @@
-from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
+from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision.datasets import ImageFolder
 import torchvision  
 import os
+import random
 from ML.gc import GlobalContext
 
 gc = GlobalContext()
@@ -18,6 +19,11 @@ def get_train_dataloader():
                                          ])
     dataset = ImageFolder(root=os.path.join(gc["data"]["data_dir"], "train"),
                           transform=transform)
+    
+    if gc["data"]["train_subset"]:
+        indices = random.sample(range(len(dataset)), gc["data"]["train_subset"])
+        dataset = Subset(dataset, indices)
+
     if gc.world_size > 1:
         sampler = DistributedSampler(dataset, gc.world_size, gc.rank, shuffle=gc["data"]["shuffle"])
     else:
@@ -44,6 +50,9 @@ def get_val_dataloader():
                                          ])
     dataset = ImageFolder(root=os.path.join(gc["data"]["data_dir"], "val"),
                           transform=transform)
+    if gc["data"]["val_subset"]:
+        indices = random.sample(range(len(dataset)), gc["data"]["val_subset"])
+        dataset = Subset(dataset, indices)
     if gc.world_size > 1:
         sampler = DistributedSampler(dataset, gc.world_size, gc.rank)
     else:
