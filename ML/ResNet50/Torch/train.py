@@ -21,13 +21,26 @@ from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
 
 
-def train_step(x, y, model, loss_fn, opt, metric_tracker):
-    opt.zero_grad()
-    logits = model(x)
-    loss = loss_fn(logits, y)
-    metric_tracker.update(logits, y)
-    loss.backward()
-    opt.step()
+def train_step(x, y, model, loss_fn, opt, metric_tracker, batch_idx):
+    if (batch_idx+1)% gc["data"]["gradient_accumulation_freq"] != 0:
+        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+            with model.no_sync():
+                logits = model(x)
+                loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
+                metric_tracker.update(logits, y)
+                loss.backward()
+        else:
+            logits = model(x)
+            loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
+            metric_tracker.update(logits, y)
+            loss.backward()
+    else:
+        logits = model(x)
+        loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
+        metric_tracker.update(logits, y)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
     return loss
 
 
@@ -114,21 +127,27 @@ def main(device, config):
     while True:
         start = time.time()
         for i, (x, y) in enumerate(train_data):
-            x, y = x.to(gc.device), y.to(gc.device)
-            loss = train_step(x, y, model, loss_fn, opt, train_metric)
+            x, y = x.to(gc.device, non_blocking=True), y.to(gc.device, non_blocking=True)
+            loss = train_step(x, y, model, loss_fn, opt, train_metric, batch_idx=i)
         
         train_accuracy = train_metric.compute()
         dist.reduce(train_accuracy, 0)
+
+        total_time = time.time()-start
+        total_time = torch.tensor(total_time)
+        dist.all_reduce(total_time)
+        total_time /= gc.world_size
         if gc.rank == 0:
             print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
-            print(f"Processing Speed: {(time.time()-start)/len(train_data)}")
+            print(f"Processing Speed: {(total_time.item())/len(train_data)}")
             with open("./results.csv", "r", newline="") as file:
                 reader = csv.reader(file)
+                rows = list([row for row in reader])
             with open("./results.csv", "w", newline="") as file:
                 writer = csv.writer(file)
-                new_row = ["cirrus", gc.device, gc["data"]["global_batch_size"], gc.world_size, int(os.environ["SLURM_NNODES"]), len(train_data), (time.time()-start)/len(train_data)]
-                for row in reader:
+                new_row = ["cirrus", gc.device, gc["data"]["global_batch_size"], gc.world_size, int(os.environ["SLURM_NNODES"]), len(train_data), (total_time.item())/len(train_data)]
+                for row in rows:
                     writer.writerow(row)
                 writer.writerow(new_row)
         exit()

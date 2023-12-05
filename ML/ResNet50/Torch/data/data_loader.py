@@ -32,6 +32,20 @@ def get_train_dataloader():
         else:
             sampler = SequentialSampler(dataset)
     local_bs = gc["data"]["global_batch_size"] // gc.world_size
+
+    if gc["data"]["gradient_accumulation_freq"] == -1:
+        if local_bs > 64:
+            gc["data"]["gradient_accumulation_freq"] = local_bs // 64
+            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+        else:
+            gc["data"]["gradient_accumulation_freq"] = 1
+    
+    if gc["data"]["local_batch_size"]:
+        gc["data"]["gradient_accumulation_freq"] = 1
+        local_bs = gc["data"]["local_batch_size"]
+        gc["data"]["global_batch_size"] = gc.world_size * local_bs
+
+
     return DataLoader(dataset, 
                       sampler=sampler,
                       batch_size=local_bs, 

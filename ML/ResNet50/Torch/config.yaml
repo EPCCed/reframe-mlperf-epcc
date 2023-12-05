@@ -2,7 +2,11 @@ device: cpu
 
 data:
     data_dir: /work/z043/z043/shared/imagenet-1k/huggingface/data
-    global_batch_size: 128
+    train_subset: 100000
+    val_subset: 5000
+    global_batch_size: 1024
+    local_batch_size: 0 # change to 0 to use global_batch_size
+    gradient_accumulation_freq: -1  # -1 will automatically determine the best frequency for a v100 gpu
     drop_last_batch: True
     shuffle: True
     n_epochs: 128
@@ -18,3 +22,6 @@ lr_schedule:
     end_lr: 0.0001
     decay_steps: 5
     poly_power: 2 
+
+training:
+    target_accuracy: 0.759
