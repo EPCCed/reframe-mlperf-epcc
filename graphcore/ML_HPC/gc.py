@@ -1,10 +1,8 @@
 from typing import Any
 import yaml
 import os
-import time
 from contextlib import contextmanager
 
-import torch.distributed as dist
 from torch.profiler import profile, record_function, ProfilerActivity
 from mlperf_logging import mllog
 from mlperf_logging.mllog import constants as log_constants
@@ -40,19 +38,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                 self.update(yaml.safe_load(stream))
                 if self["device"].lower() == 'gpu':
                     self["device"] = "cuda"
-            self.times = []
-
-    @property
-    def rank(self):
-        return dist.get_rank()
-    
-    @property
-    def world_size(self):
-        return dist.get_world_size()
-    
-    @property
-    def device(self):
-        return self["device"].lower()
     
     def update_config(self, config_path):
         with open(config_path, "r") as stream:
@@ -126,13 +111,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             with record_function(name):
                 yield prof
     
-    def throughput(self, iterable):
-        start = time.time()
-        for data in iterable:
-            yield data
-        self.times.append(time.time() - start)
-        
-
     @_run_on_0
     def log_event(self, *args, sync=True, **kwargs):
         self.mllogger.event(*args, **kwargs)

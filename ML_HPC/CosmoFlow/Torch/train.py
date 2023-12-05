@@ -97,7 +97,7 @@ def main(device, config):
         model.train()
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             gc.start_epoch(metadata={"epoch_num": epoch+1})
-            for x, y in train_data:
+            for x, y in gc.throughput(train_data):
                 opt.zero_grad()
 
                 x, y = x.to(gc.device), y.to(gc.device)
@@ -108,6 +108,7 @@ def main(device, config):
 
                 opt.step()
             
+            print(gc.times)
             gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
             gc.log_event(key="train_loss", value=loss.item(), metadata={"epoch_num": epoch+1})
 
