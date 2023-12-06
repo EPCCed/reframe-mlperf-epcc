@@ -1,10 +1,15 @@
 device: cpu
 
 data:
-    data_dir: /work/ta127/shared/imagenet-1k/
-    global_batch_size: 16
+    data_dir: /work/ta127/shared/imagenet-1k/data
+    global_batch_size: 1024
+    local_batch_size: 128 # change to 0 to use global_batch_size
+    train_subset: 0  # 0 will use the full dataset
+    val_subset: 0
+    gradient_accumulation_freq: -1  # -1 will automatically determine the best frequency for a 128 core cpu
+    drop_last_batch: True
     shuffle: True
-    n_epochs: 128
+    n_epochs: 1
     prefetch: 4
 
 opt:
@@ -17,3 +22,6 @@ lr_schedule:
     end_lr: 0.0001
     decay_steps: 5
     poly_power: 2 
+
+training:
+    target_accuracy: 0.759

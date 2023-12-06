@@ -1,0 +1,27 @@
+device: cpu
+
+data:
+    data_dir: /work/z043/z043/shared/imagenet-1k/huggingface/data
+    global_batch_size: 1024
+    local_batch_size: 0 # change to 0 to use global_batch_size
+    train_subset: 100000
+    val_subset: 5000
+    gradient_accumulation_freq: -1  # -1 will automatically determine the best frequency for a 128 core cpu
+    drop_last_batch: True
+    shuffle: True
+    n_epochs: 128
+    prefetch: 4
+
+opt:
+    name: SGD
+    momentum: 0.9
+    weight_decay: 0.0001
+
+lr_schedule:
+    base_lr: 0.002
+    end_lr: 0.0001
+    decay_steps: 5
+    poly_power: 2 
+
+training:
+    target_accuracy: 0.759

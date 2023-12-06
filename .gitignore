@@ -2,3 +2,6 @@
 
 slurm*.out
 *.pyc
+ML/ResNet50/Torch/results.csv
+reframe*.*
+rfm*

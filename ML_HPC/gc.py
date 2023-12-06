@@ -1,8 +1,10 @@
 from typing import Any
 import yaml
 import os
+import time
 from contextlib import contextmanager
 
+import torch
 import torch.distributed as dist
 from torch.profiler import profile, record_function, ProfilerActivity
 from mlperf_logging import mllog
@@ -33,12 +35,13 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     being a singleton class prevents having to read the yaml file every time
     """
     def __init__(self, config_path=None):
-        if not self.__dict__:
+        if not self.__dict__ and config_path is not None:
             with open(config_path, "r") as stream:
                 self.clear()
                 self.update(yaml.safe_load(stream))
                 if self["device"].lower() == 'gpu':
                     self["device"] = "cuda"
+            self.times = []
 
     @property
     def rank(self):
@@ -108,7 +111,8 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     def log_cluster_info(self):
         self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
         self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        self.mllogger.event(key="accelerators_per_node", value=int(os.environ["SLURM_NTASKS_PER_NODE"]))
+        accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
+        self.mllogger.event(key="accelerators_per_node", value=accels_per_node)
 
     @_run_on_0
     def print_0(self, *args, **kwargs):
@@ -124,6 +128,13 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             with record_function(name):
                 yield prof
     
+    def throughput(self, iterable):
+        start = time.time()
+        for data in iterable:
+            yield data
+        self.times.append(time.time() - start)
+        
+
     @_run_on_0
     def log_event(self, *args, sync=True, **kwargs):
         self.mllogger.event(*args, **kwargs)

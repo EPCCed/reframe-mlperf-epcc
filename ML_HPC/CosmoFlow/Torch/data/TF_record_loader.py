@@ -1,7 +1,7 @@
 import os
 
 import torch
-from torch.utils.data import Dataset, DataLoader, DistributedSampler, RandomSampler
+from torch.utils.data import Dataset, DataLoader, DistributedSampler, RandomSampler, SequentialSampler
 from tfrecord.reader import tfrecord_loader
 
 from ML_HPC.gc import GlobalContext
@@ -46,8 +46,22 @@ def get_train_dataloader():
     if gc.world_size > 1:
         sampler = DistributedSampler(data, gc.world_size, gc.rank, shuffle=gc["data"]["shuffle"], drop_last=True)
     else:
-        sampler = RandomSampler(data)
+        if gc["data"]["shuffle"]:
+            sampler = RandomSampler(data)
+        else:
+            sampler = SequentialSampler(data)
     local_bs = gc["data"]["global_batch_size"] // gc.world_size
+    if gc["data"]["gradient_accumulation_freq"] == -1:
+        if local_bs > 16:
+            gc["data"]["gradient_accumulation_freq"] = local_bs // 16
+            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+        else:
+            gc["data"]["gradient_accumulation_freq"] = 1
+    
+    if gc["data"]["local_batch_size"]:
+        gc["data"]["gradient_accumulation_freq"] = 1
+        local_bs = gc["data"]["local_batch_size"]
+        gc["data"]["global_batch_size"] = gc.world_size * local_bs
     return DataLoader(data, 
                       sampler=sampler, 
                       batch_size=local_bs, 
@@ -61,10 +75,12 @@ def get_val_dataloader():
     path = os.path.join(gc["data"]["data_dir"], "validation/")
     data = CosmoDataset(path, train=False)
     if gc.world_size > 1:
-        sampler = DistributedSampler(data, gc.world_size, gc.rank, shuffle=gc["data"]["shuffle"], drop_last=True)
+        sampler = DistributedSampler(data, gc.world_size, gc.rank, drop_last=True)
     else:
-        sampler = RandomSampler(data)
+        sampler = SequentialSampler(data)
+    
     local_bs = gc["data"]["global_batch_size"] // gc.world_size
+    
     return DataLoader(data, 
                       sampler=sampler, 
                       batch_size=local_bs,

@@ -45,6 +45,14 @@ class DistributedMAE:
             dist.all_reduce(info_tensor)
             return (info_tensor[0]/ info_tensor[1]).item()
 
+def get_comm_time(prof: torch.profiler.profile):
+    total_time = 0
+    for event in list(prof.key_averages()):
+        if "mpi:" in event.key:
+            total_time += event.cpu_time_total * 1e-9
+            total_time += event.cuda_time_total * 1e-9
+    return total_time
+
 @click.command()
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
@@ -95,40 +103,68 @@ def main(device, config):
 
     while True:
         model.train()
+        gc.start_epoch(metadata={"epoch_num": epoch+1})
+        start = time.time()
+        total_io_time = 0
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
-            gc.start_epoch(metadata={"epoch_num": epoch+1})
-            for x, y in train_data:
-                opt.zero_grad()
-
+            start_io = time.time_ns()
+            for b_idx, (x, y) in enumerate(train_data):
+                total_io_time += time.time_ns() - start_io
                 x, y = x.to(gc.device), y.to(gc.device)
-
-                logits = model.forward(x)
-                loss = criterion.forward(logits, y)
-                loss.backward()
-
-                opt.step()
-            
-            gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
-            gc.log_event(key="train_loss", value=loss.item(), metadata={"epoch_num": epoch+1})
-
-            gc.start_eval(metadata={"epoch_num": epoch+1})
-            model.eval()
-            score.reset()
-            avg_eval_loss = 0
-            with torch.no_grad():
-                for x, y in val_data:
-                    x, y = x.to(gc.device), y.to(gc.device)
+                
+                if b_idx%gc["data"]["gradient_accumulation_freq"] != 0:
+                    if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+                        with model.no_sync():
+                            logits = model.forward(x)
+                            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
+                            loss.backward()
+                    else:
+                        logits = model.forward(x)
+                        loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
+                        loss.backward()      
+                else:
                     logits = model.forward(x)
-                    avg_eval_loss += criterion.forward(logits, y)
-                    score.update(logits, y)
-                mae = score.get_value()
+                    loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
+                    loss.backward()
 
-                gc.log_event(key="eval_loss", value=(avg_eval_loss/len(val_data)).item(), metadata={"epoch_num": epoch+1})
-                gc.log_event(key="eval_mae", value=mae, metadata={"epoch_num": epoch+1})
-            gc.stop_eval(metadata={"epoch_num": epoch+1})
-            gc.stop_epoch(metadata={"epoch_num": epoch+1})
+                    opt.step()
+                    opt.zero_grad()
+            
+            start_io = time.time_ns()
+        
+        total_io_time *= 1e-9
+        
+        total_time = time.time()-start
+        total_time = torch.tensor(total_time)
+        dist.all_reduce(total_time)
+        total_time /= gc.world_size
         if gc.rank == 0:
-            print(prof.key_averages().table(sort_by="cpu_time_total"))
+            print(f"Train Loss at Epoch {epoch+1}: {loss}")
+            dataset_size = gc["data"]["n_train"]
+            print(f"Processing Speed: {(dataset_size/total_time).item()}")
+            print(f"Time For Epoch: {total_time}")
+            print(f"Communication Time: {get_comm_time(prof)}")
+            print(f"Total IO Time: {total_io_time}")
+
+        gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
+        gc.log_event(key="train_loss", value=loss.item(), metadata={"epoch_num": epoch+1})
+
+        gc.start_eval(metadata={"epoch_num": epoch+1})
+        model.eval()
+        score.reset()
+        avg_eval_loss = 0
+        with torch.no_grad():
+            for x, y in val_data:
+                x, y = x.to(gc.device), y.to(gc.device)
+                logits = model.forward(x)
+                avg_eval_loss += criterion.forward(logits, y)
+                score.update(logits, y)
+            mae = score.get_value()
+
+            gc.log_event(key="eval_loss", value=(avg_eval_loss/len(val_data)).item(), metadata={"epoch_num": epoch+1})
+            gc.log_event(key="eval_mae", value=mae, metadata={"epoch_num": epoch+1})
+        gc.stop_eval(metadata={"epoch_num": epoch+1})
+        gc.stop_epoch(metadata={"epoch_num": epoch+1})
         
         epoch += 1
         if mae <= gc["training"]["target_mae"] or epoch == gc["data"]["n_epochs"]:
