@@ -2,9 +2,9 @@
 
 #SBATCH --job-name=mlperf-cosmoflow-benchmark
 #SBATCH --time=00:30:00
-#SBATCH --nodes=128
-#SBATCH --tasks-per-node=8
-#SBATCH --cpus-per-task=16
+#SBATCH --nodes=2
+#SBATCH --tasks-per-node=1
+#SBATCH --cpus-per-task=128
 
 #SBATCH --partition=standard
 #SBATCH --qos=standard

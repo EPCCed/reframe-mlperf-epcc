@@ -120,7 +120,6 @@ def main(device, config):
     stop_training = False
     model.train()
     # Train Loop
-    print("Training Started \n")
     while True:
         gc.start_epoch(metadata={"epoch_num": epoch+1})
         train_data.sampler.set_epoch(epoch)
@@ -148,9 +147,6 @@ def main(device, config):
                 opt.zero_grad(set_to_none=True)
                 scheduler.step()
             print(loss)
-        print("finished")
-        
-
         loss_avg = loss.detach()
         if dist.is_initialized():
             dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)
@@ -167,13 +163,19 @@ def main(device, config):
         gc.log_event(key="training_accuracy", value=iou_avg_train, metadata={"epoch_num": epoch+1})
         gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
 
-
+        
+        gc.start_eval(metadata={"epoch_num": epoch+1})
         stop_training = validate(model, criterion, val_data, epoch)
+        gc.stop_eval(metadata={"epoch_num": epoch+1})
         gc.stop_epoch(metadata={"epoch_num": epoch+1})
         epoch += 1
 
         if stop_training or epoch == gc["data"]["n_epochs"]:
-            gc.stop_run()
+            if stop_training:
+                gc.log_event(key="target_iou_met", value=gc["training"]["target_iou"], metadata={"epoch_num": epoch+1})
+                gc.stop_run()
+            else:
+                gc.stop_run(metadata={"status": "target not met"})
             break
 
 if __name__ == "__main__":

@@ -1,0 +1,36 @@
+device: cpu
+
+data:
+    data_dir: /work/z19/shared/mlperf-hpc/cosmoflow/full/cosmoUniverse_2019_05_4parE_tf_v2/
+    global_batch_size: 1024
+    n_epochs: 4
+    n_train: 2048 #524288
+    n_eval: 1024 #65536
+    compression: gzip
+    apply_log: True
+    shuffle: True
+    prefetch: 4
+  
+model:
+    dropout: 0.5
+
+opt:
+    name: SGD
+    momentum: 0.9
+    weight_decay: 0.0001
+
+lr_schedule:
+    # Standard linear LR scaling configuration
+    base_lr: 0.001  # 0.0025 for sqrt
+    scaling: linear  # or sqrt
+    base_batch_size: 64  # 32 for sqrt must be smaller than the data.global_batch_size
+    n_warmup_epochs: 4
+
+    # Learning rate decay epochs and decay factors
+    decay_schedule:
+        32: 0.25
+        64: 0.125
+
+training:
+    target_mae: 0.124
+    num_ipus: 1

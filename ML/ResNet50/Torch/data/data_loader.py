@@ -6,7 +6,7 @@ import os
 import random
 from ML.gc import GlobalContext
 
-gc = GlobalContext()
+gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/configs/archer2_config.yaml")
 
 
 def get_train_dataloader():
@@ -19,7 +19,7 @@ def get_train_dataloader():
                                          ])
     dataset = ImageFolder(root=os.path.join(gc["data"]["data_dir"], "train"),
                           transform=transform)
-    
+
     if gc["data"]["train_subset"]:
         indices = random.sample(range(len(dataset)), gc["data"]["train_subset"])
         dataset = Subset(dataset, indices)
@@ -32,10 +32,10 @@ def get_train_dataloader():
         else:
             sampler = SequentialSampler(dataset)
     local_bs = gc["data"]["global_batch_size"] // gc.world_size
-
     if gc["data"]["gradient_accumulation_freq"] == -1:
         if local_bs > 64:
             gc["data"]["gradient_accumulation_freq"] = local_bs // 64
+
             local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
         else:
             gc["data"]["gradient_accumulation_freq"] = 1
@@ -45,12 +45,11 @@ def get_train_dataloader():
         local_bs = gc["data"]["local_batch_size"]
         gc["data"]["global_batch_size"] = gc.world_size * local_bs
 
-
     return DataLoader(dataset, 
                       sampler=sampler,
                       batch_size=local_bs, 
                       drop_last=gc["data"]["drop_last_batch"],
-                      num_workers=1,
+                      num_workers=2,
                       prefetch_factor=gc["data"]["prefetch"]
                       )
 
@@ -82,3 +81,4 @@ def get_val_dataloader():
                       num_workers=1,
                       prefetch_factor=gc["data"]["prefetch"]
                       )
+
