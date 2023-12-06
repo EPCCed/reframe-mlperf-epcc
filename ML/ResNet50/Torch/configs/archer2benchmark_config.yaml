@@ -4,8 +4,8 @@ data:
     data_dir: /work/ta127/shared/imagenet-1k/data
     global_batch_size: 1024
     local_batch_size: 128 # change to 0 to use global_batch_size
-    train_subset: 0  # 0 will use the full dataset
-    val_subset: 0
+    train_subset: 100000
+    val_subset: 5000
     gradient_accumulation_freq: -1  # -1 will automatically determine the best frequency for a 128 core cpu
     drop_last_batch: True
     shuffle: True

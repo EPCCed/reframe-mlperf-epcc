@@ -1,9 +1,9 @@
 #!/bin/bash
 
 #SBATCH --job-name=mlperf-resnet-benchmark
-#SBATCH --time=05:00:00
+#SBATCH --time=01:00:00
 #SBATCH --exclusive
-#SBATCH --nodes=32
+#SBATCH --nodes=2
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=128
 

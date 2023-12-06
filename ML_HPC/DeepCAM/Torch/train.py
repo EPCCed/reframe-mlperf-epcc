@@ -113,14 +113,13 @@ def main(device, config):
     class_weights = [0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow]
     criterion = CELoss(class_weights).to(gc.device)
     
-    gc.start_init()
+    gc.stop_init()
     gc.start_run()
 
     epoch = 0
     stop_training = False
     model.train()
     # Train Loop
-    print("Training Started \n")
     while True:
         gc.start_epoch(metadata={"epoch_num": epoch+1})
         train_data.sampler.set_epoch(epoch)
@@ -128,38 +127,59 @@ def main(device, config):
     
         for idx, (x, y, _) in enumerate(train_data):
             x, y = x.to(gc.device), y.to(gc.device)
-            logits = model.forward(x)
-            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
-            loss.backward()
-            if ((idx + 1)%gc["data"]["gradient_accumulation"]==0) or (idx+1 == len(train_data)):
+            
+            if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
+                if isinstance(model, nn.parallel.DistributedDataParallel):
+                    with model.no_sync():
+                        logits = model.forward(x)
+                        loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                        loss.backward()
+                     
+                else:
+                    logits = model.forward(x)
+                    loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                    loss.backward()
+            else: 
+                logits = model.forward(x)
+                loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                loss.backward()
                 opt.step()
                 opt.zero_grad(set_to_none=True)
                 scheduler.step()
+            print(loss)
+
+        
         
 
-            loss_avg = loss.detach()
-            if dist.is_initialized():
-                dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)
-            loss_avg_train = loss_avg.item() / float(gc.world_size)
+        loss_avg = loss.detach()
+        if dist.is_initialized():
+            dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)
+        loss_avg_train = loss_avg.item() / float(gc.world_size)
 
-            predictions = torch.argmax(torch.softmax(logits, 1), 1)
-            iou = compute_score(predictions, y, num_classes=3)
-            iou_avg = iou.detach()
-            if dist.is_initialized():
-                dist.reduce(iou_avg, dst=0, op=dist.ReduceOp.SUM)
-            iou_avg_train = iou_avg.item() / float(gc.world_size)
+        predictions = torch.argmax(torch.softmax(logits, 1), 1)
+        iou = compute_score(predictions, y, num_classes=3)
+        iou_avg = iou.detach()
+        if dist.is_initialized():
+            dist.reduce(iou_avg, dst=0, op=dist.ReduceOp.SUM)
+        iou_avg_train = iou_avg.item() / float(gc.world_size)
 
-            gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
-            gc.log_event(key="training_accuracy", value=iou_avg_train, metadata={"epoch_num": epoch+1})
-            gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
+        gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
+        gc.log_event(key="training_accuracy", value=iou_avg_train, metadata={"epoch_num": epoch+1})
+        gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
 
-
+        
+        gc.start_eval(metadata={"epoch_num": epoch+1})
         stop_training = validate(model, criterion, val_data, epoch)
+        gc.stop_eval(metadata={"epoch_num": epoch+1})
         gc.stop_epoch(metadata={"epoch_num": epoch+1})
         epoch += 1
 
         if stop_training or epoch == gc["data"]["n_epochs"]:
-            gc.stop_run()
+            if stop_training:
+                gc.log_event(key="target_iou_met", value=gc["training"]["target_iou"], metadata={"epoch_num": epoch+1})
+                gc.stop_run()
+            else:
+                gc.stop_run(metadata={"status": "target not met"})
             break
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@ import yaml
 import os
 from contextlib import contextmanager
 
+import torch
 import torch.distributed as dist
 from torch.profiler import profile, record_function, ProfilerActivity
 from mlperf_logging import mllog
@@ -20,9 +21,9 @@ def _run_on_0(func):
         if "sync" in kwrags.keys():
             if kwrags["sync"]:
                 dist.barrier()
-        if dist.get_global_rank() == 0:
+        if dist.get_rank() == 0:
             return func(*args, **kwrags)
-        return wrapper
+    return wrapper
 
 class GlobalContext(dict, metaclass=SingletonMetaClass):
     _config_path = None
@@ -32,7 +33,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     being a singleton class prevents having to read the yaml file every time
     """
     def __init__(self, config_path=None):
-        if not self.__dict__:
+        if not self.__dict__ and config_path is not None:
             with open(config_path, "r") as stream:
                 self.clear()
                 self.update(yaml.safe_load(stream))
@@ -60,47 +61,48 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @_run_on_0
     def log_bert(self):
-        mllogger = mllog.get_mllogger()
+        self.mllogger = mllog.get_mllogger()
         self.mllogger.default_namespace = "bert"
-        mllogger.event(key=log_constants.BERT)
-        mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"])
-        mllogger.event(key=log_constants.GLOBAL_BATCH_SIZE, value=self["data"]["global_batch_size"])
-        mllogger.event(key=log_constants.OPT_BASE_LR, value=self["lr_schedule"]["base_lr"])
-        mllogger.event(key=log_constants.OPT_LAMB_EPSILON, value=1.0e-6)
-        mllogger.event(key=log_constants.OPT_LR_TRAINING_STEPS, value=self["lr_schedule"]["total_steps"])
-        mllogger.event(key=log_constants.OPT_LR_WARMUP_STEPS, value=self["lr_schedule"]["lr_warmup_steps"])
-        mllogger.event(key=log_constants.NUM_WARMUP_STEPS, value=self["lr_schedule"]["lr_warmup_steps"])
-        mllogger.event(key=log_constants.START_WARMUP_STEP, value=self["lr_schedule"]["start_warmup_step"])
-        mllogger.event(key=log_constants.OPT_LAMB_BETA_1, value=self["opt"]["betas"][0])
-        mllogger.event(key=log_constants.OPT_LAMB_BETA_2, value=self["opt"]["betas"][1])
-        mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["self"]["weight_decay"])
+        self.mllogger.event(key=log_constants.BERT)
+        self.mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"])
+        self.mllogger.event(key=log_constants.GLOBAL_BATCH_SIZE, value=self["data"]["global_batch_size"])
+        self.mllogger.event(key=log_constants.OPT_BASE_LR, value=self["lr_schedule"]["base_lr"])
+        self.mllogger.event(key=log_constants.OPT_LAMB_EPSILON, value=1.0e-6)
+        self.mllogger.event(key=log_constants.OPT_LR_TRAINING_STEPS, value=self["lr_schedule"]["total_steps"])
+        self.mllogger.event(key=log_constants.OPT_LR_WARMUP_STEPS, value=self["lr_schedule"]["lr_warmup_steps"])
+        self.mllogger.event(key=log_constants.NUM_WARMUP_STEPS, value=self["lr_schedule"]["lr_warmup_steps"])
+        self.mllogger.event(key=log_constants.START_WARMUP_STEP, value=self["lr_schedule"]["start_warmup_step"])
+        self.mllogger.event(key=log_constants.OPT_LAMB_BETA_1, value=self["opt"]["betas"][0])
+        self.mllogger.event(key=log_constants.OPT_LAMB_BETA_2, value=self["opt"]["betas"][1])
+        self.mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["self"]["weight_decay"])
         self.log_cluster_info()
     
     @_run_on_0
     def log_resnet(self):
-        mllogger = mllog.get_mllogger()
+        self.mllogger = mllog.get_mllogger()
         self.mllogger.default_namespace = "resnet"
-        mllogger.event(key=log_constants.RESNET)
+        self.mllogger.event(key=log_constants.RESNET)
         if self["opt"]["name"].upper() == "SGD":
-            mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"].upper())
+            self.mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"].upper())
         elif self["opt"]["name"].upper() == "LARS":
-            mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"].upper())
-            mllogger.event(key=log_constants.LARS_EPSILON, value=1.0e-6)
+            self.mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"].upper())
+            self.mllogger.event(key=log_constants.LARS_EPSILON, value=1.0e-6)
         
-        mllogger.event(key=log_constants.GLOBAL_BATCH_SIZE, value=self["data"]["global_batch_size"])
-        mllogger.event(key=log_constants.OPT_BASE_LR, value=self["lr_schedule"]["base_lr"])
-        mllogger.event(key=log_constants.OPT_END_LR, value=self["lr_schedule"]["end_lr"])
-        mllogger.event(key=log_constants.LARS_OPT_LR_DECAY_POLY_POWER, value=self["lr_schedule"]["poly_power"])
-        mllogger.event(key=log_constants.OPT_LR_DECAY_STEPS, value=self["lr_schedule"]["decay_steps"])
-        mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
-        mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["opt"]["weight_decay"])
+        self.mllogger.event(key=log_constants.GLOBAL_BATCH_SIZE, value=self["data"]["global_batch_size"])
+        self.mllogger.event(key=log_constants.OPT_BASE_LR, value=self["lr_schedule"]["base_lr"])
+        self.mllogger.event(key=log_constants.OPT_END_LR, value=self["lr_schedule"]["end_lr"])
+        self.mllogger.event(key=log_constants.LARS_OPT_LR_DECAY_POLY_POWER, value=self["lr_schedule"]["poly_power"])
+        self.mllogger.event(key=log_constants.OPT_LR_DECAY_STEPS, value=self["lr_schedule"]["decay_steps"])
+        self.mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
+        self.mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["opt"]["weight_decay"])
         self.log_cluster_info()
 
     @_run_on_0
     def log_cluster_info(self):
         self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
         self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        self.mllogger.event(key="accelerators_per_node", value=int(os.environ["SLURM_NTASKS_PER_NODE"]))
+        accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
+        self.mllogger.event(key="accelerators_per_node", value=accels_per_node)
 
     @_run_on_0
     def print_0(self, *args, **kwargs):
