@@ -108,13 +108,16 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @contextmanager
     def profiler(self, name: str):
-        if self.device == "cpu":
-            activities=[ProfilerActivity.CPU]
+        if self.rank != 0:
+            yield None
         else:
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
-        with profile(activities=activities, with_flops=True) as prof:
-            with record_function(name):
-                yield prof
+            if self.device == "cpu":
+                activities=[ProfilerActivity.CPU]
+            else:
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+            with profile(activities=activities, with_flops=True) as prof:
+                with record_function(name):
+                    yield prof
     
     @_run_on_0
     def log_event(self, *args, sync=True, **kwargs):

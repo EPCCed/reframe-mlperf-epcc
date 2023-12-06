@@ -170,7 +170,7 @@ def get_datashapes():
 
 def get_dataloaders():
     # import only what we need
-    train_dir = os.path.join(gc["data"]["data_dir"], "train")
+    train_dir = os.path.join(gc["data"]["data_dir"], "train") if "mini" not in gc["data"]["data_dir"] else gc["data"]["data_dir"]
     train_set = CamDataset(train_dir, 
                            statsfile = os.path.join(gc["data"]["data_dir"], 'stats.h5'),
                            channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
@@ -196,7 +196,7 @@ def get_dataloaders():
 
     train_size = train_set.global_size
 
-    validation_dir = os.path.join(gc["data"]["data_dir"], "validation")
+    validation_dir = os.path.join(gc["data"]["data_dir"], "validation") if "mini" not in gc["data"]["data_dir"] else gc["data"]["data_dir"]
     validation_set = CamDataset(validation_dir, 
                                 statsfile = os.path.join(gc["data"]["data_dir"], 'stats.h5'),
                                 channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],

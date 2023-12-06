@@ -107,8 +107,8 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     @_run_on_0
     def log_cluster_info(self):
         self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
-        self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        self.mllogger.event(key="accelerators_per_node", value=int(os.environ["SLURM_NTASKS_PER_NODE"]))
+        #self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
+        #self.mllogger.event(key="accelerators_per_node", value=int(os.environ["SLURM_NTASKS_PER_NODE"]))
 
     @_run_on_0
     def print_0(self, *args, **kwargs):

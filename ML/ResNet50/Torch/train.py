@@ -1,32 +1,46 @@
 import os
 from pathlib import Path
 import sys
+path_root = Path(__file__).parents[3]
+sys.path.append(str(path_root))
+import csv
 import click
+import time
 
 import torch
 import torch.distributed as dist
-from flash.core.optimizers import LARS
-import torchmetrics
-
-path_root = Path(__file__).parents[3]
-sys.path.append(str(path_root))
+from torchmetrics.classification import Accuracy
+from tqdm import tqdm
 
 from ML.gc import GlobalContext
-
 gc = GlobalContext(
-    "/work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/config.yaml"
+    "/work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/config.yaml"
 )
 import ML.ResNet50.Torch.data.data_loader as dl
+from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
 
 
-def train_step(x, y, model, loss_fn, opt, metric_tracker):
-    opt.zero_grad()
-    logits = model(x)
-    loss = loss_fn(logits, y)
-    metric_tracker(logits, y)
-    loss.backward()
-    opt.step()
+def train_step(x, y, model, loss_fn, opt, metric_tracker, batch_idx):
+    if (batch_idx+1)% gc["data"]["gradient_accumulation_freq"] != 0:
+        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
+            with model.no_sync():
+                logits = model(x)
+                loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
+                metric_tracker.update(logits, y)
+                loss.backward()
+        else:
+            logits = model(x)
+            loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
+            metric_tracker.update(logits, y)
+            loss.backward()
+    else:
+        logits = model(x)
+        loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
+        metric_tracker.update(logits, y)
+        loss.backward()
+        opt.step()
+        opt.zero_grad()
     return loss
 
 
@@ -55,13 +69,18 @@ def main(device, config):
     else:
         backend = "gloo"
     dist.init_process_group(backend)
+    print(f"Hello From Rank {gc.rank}")
 
     if gc.device == "cuda":
-        local_rank = os.environ["LOCAL_RANK"]
-        torch.cuda.set_device("cuda:" + local_rank)
+        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+        torch.cuda.set_device("cuda:" + str(local_rank))
 
-    train_data = dl.get_imagenet_dataloader("train")
-    val_data = dl.get_imagenet_dataloader("val")
+    train_data = dl.get_train_dataloader()
+    val_data = dl.get_val_dataloader()
+    if gc.rank == 0:  # change to -1 to turn off
+        train_data = tqdm(train_data, unit="images", unit_scale=gc["data"]["global_batch_size"] // gc.world_size)
+        val_data = tqdm(val_data)
 
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
@@ -96,28 +115,57 @@ def main(device, config):
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    train_metric = torchmetrics.classification.Accuracy(
-        task="multiclass", num_classes=1000
-    )
-    val_metric = torchmetrics.classification.Accuracy(
-        task="multiclass", num_classes=1000
-    )
+    train_metric = Accuracy(task="multiclass", num_classes=1000)
+    val_metric = Accuracy(task="multiclass", num_classes=1000)
 
     train_metric.to(gc.device)
     val_metric.to(gc.device)
 
     model.train()
 
-    for E in range(1, gc["data"]["n_epochs"]+1):
+    E = 1
+    while True:
+        start = time.time()
         for i, (x, y) in enumerate(train_data):
-            print(x.shape, y.shape)
-            x, y = x.to(gc.device), y.to(gc.device)
-            loss = train_step(x, y, model, loss_fn, opt, train_metric)
+            x, y = x.to(gc.device, non_blocking=True), y.to(gc.device, non_blocking=True)
+            loss = train_step(x, y, model, loss_fn, opt, train_metric, batch_idx=i)
+        
+        train_accuracy = train_metric.compute()
+        dist.reduce(train_accuracy, 0)
+
+        total_time = time.time()-start
+        total_time = torch.tensor(total_time)
+        dist.all_reduce(total_time)
+        total_time /= gc.world_size
+        if gc.rank == 0:
+            print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
+            print(f"Train Loss at Epoch {E}: {loss}")
+            print(f"Processing Speed: {(total_time.item())/len(train_data)}")
+            with open("./results.csv", "r", newline="") as file:
+                reader = csv.reader(file)
+                rows = list([row for row in reader])
+            with open("./results.csv", "w", newline="") as file:
+                writer = csv.writer(file)
+                new_row = ["cirrus", gc.device, gc["data"]["global_batch_size"], gc.world_size, int(os.environ["SLURM_NNODES"]), len(train_data), (total_time.item())/len(train_data)]
+                for row in rows:
+                    writer.writerow(row)
+                writer.writerow(new_row)
+        exit()
+
+
 
         if E % 4 == 0:
             for x, y in val_data:
                 loss = valid_step(x, y, model, loss_fn, val_metric)
-                print(f"Loss at Epoch {E}: {loss}")
+            val_accuracy = val_metric.compute()
+            dist.all_reduce(val_accuracy)
+            if gc.rank == 0:
+                print(f"Train Accuracy at Epoch {E}: {val_accuracy/gc.world_size}")
+                print(f"Validation Loss at Epoch {E}: {loss}")
+        E += 1
+        if "val_accuracy" in dir(): 
+            if E == gc["data"]["n_epochs"] or val_accuracy/gc.world_size >= gc["training"]["target_accuracy"]:
+                break
         scheduler.step()
 
 
