@@ -31,7 +31,7 @@ conda install cmake ninja
 #cd into pytorch if not already
 pip install -r requirements.txt
 conda install mkl mkl-include
-conda install -c pytorch magma-cuda118
+conda install -c pytorch magma-cuda116+
 ```
 
 # Build Pytorch

@@ -13,7 +13,7 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/DeepCAM/Torch/config.yaml")
+gc = GlobalContext("/work/z043/z043/crae/chris-ml-intern/ML_HPC/DeepCAM/Torch/config.yaml")
 import ML_HPC.DeepCAM.Torch.data.data_loader as dl
 from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
@@ -147,10 +147,6 @@ def main(device, config):
                 opt.zero_grad(set_to_none=True)
                 scheduler.step()
             print(loss)
-
-        
-        
-
         loss_avg = loss.detach()
         if dist.is_initialized():
             dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)

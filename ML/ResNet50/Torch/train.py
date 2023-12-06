@@ -163,6 +163,7 @@ def main(device, config):
         if gc.rank == 0:
             print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
+
             dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1281167
             print(f"Processing Speed: {(dataset_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
