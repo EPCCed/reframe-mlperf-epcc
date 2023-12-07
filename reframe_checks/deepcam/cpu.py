@@ -1,13 +1,13 @@
 import reframe as rfm
 import reframe.utility.sanity as sn
-from base import CosmoFlowBaseCheck
+from base import DeepCamBaseCheck
 
 @rfm.simple_test
-class CosmoFlowCPUCheck(CosmoFlowBaseCheck):
+class DeepCamCPUCheck(DeepCamBaseCheck):
     def __init__(self):
         super().__init__()
         self.valid_prog_environs = ['PrgEnv-gnu']
-        self.descr = "CosmoFlow CPU Benchmark"
+        self.descr = "DeepCam CPU Benchmark"
         self.valid_systems = ['archer2:compute', 'cirrus:compute']
         if self.current_system.name in ["archer2"]:
             self.num_tasks = 32
@@ -20,8 +20,8 @@ class CosmoFlowCPUCheck(CosmoFlowBaseCheck):
             }
             self.prerun_cmds = ['eval "$(/work/ta127/ta127/chrisrae/miniconda3/bin/conda shell.bash hook)"', "conda activate mlperf-torch"]
             self.executable = 'python'
-            self.executable_opts = ["/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/CosmoFlow/Torch/train.py", 
-                                    " --config", "/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/CosmoFlow/Torch/configs/archer2_config.yaml"
+            self.executable_opts = ["/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/DeepCAM/Torch/train.py", 
+                                    " --config", "/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/DeepCAM/Torch/configs/archer2benchmark_config.yaml"
                                     ]
 
             #self.reference = {"archer2:compute": {"Throughput": (200, -0.05, 0.10, "images/s"),

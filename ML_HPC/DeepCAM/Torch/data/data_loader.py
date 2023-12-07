@@ -96,7 +96,7 @@ class CamDataset(Dataset):
         self.shuffle = shuffle
         self.preprocess = preprocess
         self.transpose = transpose
-        self.all_files = sorted( [ os.path.join(self.source,x) for x in os.listdir(self.source) if x.endswith('.h5') ] )
+        self.all_files = sorted( [ os.path.join(self.source,x) for x in os.listdir(self.source) if x.endswith('.h5') and x != "stats.h5"] )
         self.comm_size = comm_size
         self.comm_rank = comm_rank
         self.allow_uneven_distribution = allow_uneven_distribution
@@ -110,8 +110,8 @@ class CamDataset(Dataset):
         #get shapes
         filename = os.path.join(self.source, self.files[0])
         with h5.File(filename, "r") as fin:
-            self.data_shape = fin['climate']['data'].shape
-            self.label_shape = fin['climate']['labels_0'].shape
+                self.data_shape = fin['climate']['data'].shape
+                self.label_shape = fin['climate']['labels_0'].shape
         
         #get statsfile for normalization
         #open statsfile
@@ -123,8 +123,7 @@ class CamDataset(Dataset):
         self.data_shift = np.reshape( data_shift, (1, 1, data_shift.shape[0]) ).astype(np.float32)
         self.data_scale = np.reshape( data_scale, (1, 1, data_scale.shape[0]) ).astype(np.float32)
 
-        if comm_rank == 0:
-            print("Initialized dataset with ", self.global_size, " samples.")
+
 
 
     def __len__(self):
@@ -141,8 +140,12 @@ class CamDataset(Dataset):
 
         #load data and project
         with h5.File(filename, "r") as f:
-            data = f["climate/data"][..., self.channels]
-            label = f["climate/labels_0"][...].astype(np.int64)
+            try:
+                data = f["climate"]["data"][..., self.channels]
+                label = f["climate"]["labels_0"][...].astype(np.int64)
+            except Exception as e:
+                print(filename, "\n\n")
+                raise e
         
         #preprocess
         data = self.data_scale * (data - self.data_shift)
@@ -215,38 +218,5 @@ def get_dataloaders():
                                    prefetch_factor=gc["data"]["prefetch"])
     
     validation_size = validation_set.global_size    
-        
-    return train_loader, train_size, validation_loader, validation_size
-
-def get_dummy_dataloaders(n_samples):
-    train_set = DummyDataset(n_samples=n_samples)
-    
-    distributed_train_sampler = DistributedSampler(train_set,
-                                                   num_replicas = gc.world_size,
-                                                   rank = gc.rank,
-                                                   shuffle = True,
-                                                   drop_last = True)
-    
-    train_loader = DataLoader(train_set,
-                              batch_size=gc["data"]["global_batch_size"] // gc.world_size//gc["data"]["gradient_accumulation"],
-                              num_workers =1,
-                              sampler = distributed_train_sampler,
-                              pin_memory = True if gc.device != "cpu" else False,
-                              drop_last = True,
-                              prefetch_factor=gc["data"]["prefetch"])
-
-    train_size = 0
-
-    validation_set = DummyDataset(n_samples=n_samples)
-    
-    # use batch size = 1 here to make sure that we do not drop a sample
-    validation_loader = DataLoader(validation_set,
-                                   batch_size=1,
-                                   num_workers = 1,
-                                   pin_memory = True if gc.device != "cpu" else False,
-                                   drop_last = False,
-                                   prefetch_factor=gc["data"]["prefetch"])
-    
-    validation_size = 0   
         
     return train_loader, train_size, validation_loader, validation_size
