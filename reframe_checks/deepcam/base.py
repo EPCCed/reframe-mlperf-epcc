@@ -1,7 +1,7 @@
 import reframe as rfm
 import reframe.utility.sanity as sn
 
-class CosmoFlowBaseCheck(rfm.RunOnlyRegressionTest):
+class DeepCamBaseCheck(rfm.RunOnlyRegressionTest):
     def __init__(self):
         super().__init__()
 
