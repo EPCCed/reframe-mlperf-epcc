@@ -39,6 +39,8 @@ def get_train_dataloader():
             local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
         else:
             gc["data"]["gradient_accumulation_freq"] = 1
+    else:
+        local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
     
     if gc["data"]["local_batch_size"]:
         gc["data"]["gradient_accumulation_freq"] = 1
@@ -49,8 +51,9 @@ def get_train_dataloader():
                       sampler=sampler,
                       batch_size=local_bs, 
                       drop_last=gc["data"]["drop_last_batch"],
-                      num_workers=2,
-                      prefetch_factor=gc["data"]["prefetch"]
+                      num_workers=1,
+                      prefetch_factor=gc["data"]["prefetch"],
+                      pin_memory = True if gc.device == "cuda" else False 
                       )
 
 def get_val_dataloader():
@@ -79,6 +82,7 @@ def get_val_dataloader():
                       batch_size=local_bs, 
                       drop_last=gc["data"]["drop_last_batch"],
                       num_workers=1,
-                      prefetch_factor=gc["data"]["prefetch"]
+                      prefetch_factor=gc["data"]["prefetch"],
+                      pin_memory = True if gc.device == "cuda" else False 
                       )
 
