@@ -57,8 +57,8 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     def update_config(self, config_path):
         with open(config_path, "r") as stream:
-            self.__dict__.clear()
-            self.__dict__.update(yaml.safe_load(stream))
+            self.clear()
+            self.update(yaml.safe_load(stream))
             if self["device"].lower() == 'gpu':
                 self["device"] = "cuda"
     

@@ -2,7 +2,7 @@ device: cpu
 
 data:
     data_dir: /work/z19/shared/mlperf-hpc-eleanor/deepcam/mini/deepcam-data-n512
-    global_batch_size: 64
+    global_batch_size: 128
     gradient_accumulation: 1
     shuffle: True
     n_epochs: 128
