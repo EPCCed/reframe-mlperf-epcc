@@ -97,6 +97,7 @@ def main(device, config):
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
+        model.register_comm_hook(state=None, hook=gc.mpi_log_hook)
         if gc.device == "cpu":
             pass
         else:
@@ -146,9 +147,9 @@ def main(device, config):
         with gc.profiler(f"Epoch: {E}") as prof:
             start_io = time.time_ns()
             for i, (x, y) in enumerate(train_data):
+                x, y = x.to(gc.device), y.to(gc.device)
                 total_io_time += time.time_ns() - start_io
 
-                x, y = x.to(gc.device), y.to(gc.device)
                 loss = train_step(x, y, model, loss_fn, opt, train_metric, i)
 
                 start_io = time.time_ns()
@@ -167,6 +168,7 @@ def main(device, config):
             dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1281167
             print(f"Processing Speed: {(dataset_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
+            print(gc.get_mpi())
             print(f"Communication Time: {get_comm_time(prof)}")
             print(f"Total IO Time: {total_io_time}")
         gc.start_eval(metadata={"epoch_num": E})

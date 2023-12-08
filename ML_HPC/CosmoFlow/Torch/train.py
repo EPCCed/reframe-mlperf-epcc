@@ -130,7 +130,7 @@ def main(device, config):
                     opt.step()
                     opt.zero_grad()
             
-            start_io = time.time_ns()
+                start_io = time.time_ns()
         
         total_io_time *= 1e-9
         

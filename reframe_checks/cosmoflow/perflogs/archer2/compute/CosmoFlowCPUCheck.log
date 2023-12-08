@@ -1,0 +1,4 @@
+job_completion_time|version|info|jobid|perf_var=perf_value|perf_ref perf_lower_thres,perf_upper_thres)perf_unit
+2023-12-07T09:45:08|reframe 4.2.1|CosmoFlowCPUCheck /89c77c3e @archer2:compute+PrgEnv-gnu|jobid=5031792|null=null|ref=null (l=null, u=null)|null
+2023-12-07T09:52:45|reframe 4.2.1|CosmoFlowCPUCheck /89c77c3e @archer2:compute+PrgEnv-gnu|jobid=5031842|null=null|ref=null (l=null, u=null)|null
+2023-12-07T10:04:37|reframe 4.2.1|CosmoFlowCPUCheck /89c77c3e @archer2:compute+PrgEnv-gnu|jobid=5031956|null=null|ref=null (l=null, u=null)|null
