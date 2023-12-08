@@ -39,4 +39,5 @@ Its important to note that mpi is not loaded by default on cirrus so must by loa
 
 You can easily increase the number of nodes by changing the  `#SBATCH --nodes=...` line.
 
+There are 2 ways to run your job on gpus instead of cpus the first is to change the device in the config to gpu or cuda `device: cuda` the second is to pass the --device argument to the train.py this would look like `srun [...] python train.py --device cuda` this overwites what is defined in the config
 

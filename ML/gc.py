@@ -1,5 +1,6 @@
 import yaml
 import os
+import time
 from contextlib import contextmanager
 
 import torch
@@ -58,6 +59,30 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             self.__dict__.update(yaml.safe_load(stream))
             if self["device"].lower() == 'gpu':
                 self["device"] = "cuda"
+    
+    @property
+    def mpi_log_hook(self):
+        # probably wont work due to asynchronous property of futures
+        if not hasattr(self, "_mpi_total_time"):
+            self._mpi_total_time = 0
+        if not hasattr(self, "_mpi_iter_start_time"):
+            self._mpi_iter_start_time = 0
+
+        def _call_start_timer():
+            self._mpi_iter_start_time = time.time_ns()
+
+        def _call_log_timer():
+            self._mpi_total_time += time.time_ns() - self._mpi_iter_start_time
+
+        def _time_mpi(state, bucket):
+            _call_start_timer()
+            fut = dist.all_reduce(bucket.buffer()).get_future()
+            _call_log_timer()
+            return fut
+        return _time_mpi
+
+    def get_mpi(self):
+        return self._mpi_total_time*1e-9
     
     @_run_on_0
     def log_bert(self):

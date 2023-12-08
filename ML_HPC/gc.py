@@ -57,8 +57,8 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     def update_config(self, config_path):
         with open(config_path, "r") as stream:
-            self.__dict__.clear()
-            self.__dict__.update(yaml.safe_load(stream))
+            self.clear()
+            self.update(yaml.safe_load(stream))
             if self["device"].lower() == 'gpu':
                 self["device"] = "cuda"
     
@@ -120,13 +120,16 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @contextmanager
     def profiler(self, name: str):
-        if self.device == "cpu":
-            activities=[ProfilerActivity.CPU]
+        if self.rank != 0:
+            yield None
         else:
-            activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
-        with profile(activities=activities, with_flops=True) as prof:
-            with record_function(name):
-                yield prof
+            if self.device == "cpu":
+                activities=[ProfilerActivity.CPU]
+            else:
+                activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
+            with profile(activities=activities, with_flops=True) as prof:
+                with record_function(name):
+                    yield prof
     
     def throughput(self, iterable):
         start = time.time()

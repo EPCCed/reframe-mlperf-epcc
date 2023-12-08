@@ -13,7 +13,7 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/z043/z043/crae/chris-ml-intern/ML_HPC/DeepCAM/Torch/config.yaml")
+gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/DeepCAM/Torch/configs/archer2benchmark_config.yaml")
 import ML_HPC.DeepCAM.Torch.data.data_loader as dl
 from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
@@ -48,6 +48,14 @@ def dummy_loaders(n_samples):
     bs = (gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"]
     yield torch.ones(bs, 16, 768, 1152),  torch.ones(bs, 1, 768, 1152), "file.txt"
 
+def get_comm_time(prof: torch.profiler.profile):
+    total_time = 0
+    for event in list(prof.key_averages()):
+        if "mpi:" in event.key:
+            total_time += event.cpu_time_total * 1e-9
+            total_time += event.cuda_time_total * 1e-9
+    return total_time
+
 @click.command()
 @click.option("--device", "-d", default="", show_default="", type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default="", show_default="", type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
@@ -78,7 +86,7 @@ def main(device, config):
     
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
 
-    model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None).to(gc.device)
+    model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None,).to(gc.device)
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
 
@@ -124,29 +132,45 @@ def main(device, config):
         gc.start_epoch(metadata={"epoch_num": epoch+1})
         train_data.sampler.set_epoch(epoch)
         model.train()
-    
-        for idx, (x, y, _) in enumerate(train_data):
-            x, y = x.to(gc.device), y.to(gc.device)
-            
-            if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
-                if isinstance(model, nn.parallel.DistributedDataParallel):
-                    with model.no_sync():
+        start = time.time()
+        total_io_time = 0
+        with gc.profiler(f"Epoch: {epoch+1}") as prof:
+            start_io = time.time_ns()
+            for idx, (x, y, _) in enumerate(train_data):
+                total_io_time += time.time_ns() - start_io
+                x, y = x.to(gc.device), y.to(gc.device)
+                
+                if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
+                    if isinstance(model, nn.parallel.DistributedDataParallel):
+                        with model.no_sync():
+                            logits = model.forward(x)
+                            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                            loss.backward()
+                        
+                    else:
                         logits = model.forward(x)
                         loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
                         loss.backward()
-                     
-                else:
+                else: 
                     logits = model.forward(x)
                     loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
                     loss.backward()
-            else: 
-                logits = model.forward(x)
-                loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
-                loss.backward()
-                opt.step()
-                opt.zero_grad(set_to_none=True)
-                scheduler.step()
-            print(loss)
+                    opt.step()
+                    opt.zero_grad(set_to_none=True)
+                    scheduler.step()
+                start_io = time.time_ns()
+
+        total_io_time *= 1e-9
+        total_time = time.time()-start
+        total_time = torch.tensor(total_time)
+        dist.all_reduce(total_time)
+        total_time /= gc.world_size
+        print(f"Processing Speed: {(train_data_size/total_time).item()}")
+        print(f"Time For Epoch: {total_time}")
+        print(f"Communication Time: {get_comm_time(prof)}")
+        print(f"Total IO Time: {total_io_time}")
+
+
         loss_avg = loss.detach()
         if dist.is_initialized():
             dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)
@@ -164,13 +188,11 @@ def main(device, config):
         gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
 
         
-        gc.start_eval(metadata={"epoch_num": epoch+1})
         stop_training = validate(model, criterion, val_data, epoch)
-        gc.stop_eval(metadata={"epoch_num": epoch+1})
         gc.stop_epoch(metadata={"epoch_num": epoch+1})
         epoch += 1
 
-        if stop_training or epoch == gc["data"]["n_epochs"]:
+        if stop_training or epoch >= gc["data"]["n_epochs"]:
             if stop_training:
                 gc.log_event(key="target_iou_met", value=gc["training"]["target_iou"], metadata={"epoch_num": epoch+1})
                 gc.stop_run()

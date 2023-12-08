@@ -46,7 +46,7 @@ def compute_score(prediction: torch.Tensor, gt: torch.Tensor, num_classes: int) 
 
 def validate(net, criterion, validation_loader, epoch):
     #eval
-    gc.start_eval()
+    gc.start_eval(metadata={"epoch": epoch+1})
     net.eval()
 
     count_sum_val = torch.zeros((1), dtype=torch.float32, device=gc.device)
@@ -100,7 +100,7 @@ def validate(net, criterion, validation_loader, epoch):
         gc.log_event(key="target_accuracy_reached", value=gc["training"]["target_iou"], metadata={"epoch": epoch+1})
 
     # set to train
-    gc.stop_eval()
+    gc.stop_eval(metadata={"epoch": epoch+1})
     net.train()
     
     return stop_training

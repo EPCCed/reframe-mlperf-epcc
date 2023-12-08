@@ -2,7 +2,7 @@
 
 #SBATCH --job-name=mlperf-deepcam-benchmark
 #SBATCH --time=00:30:00
-#SBATCH --nodes=2
+#SBATCH --nodes=16
 #SBATCH --tasks-per-node=1
 #SBATCH --cpus-per-task=128
 
