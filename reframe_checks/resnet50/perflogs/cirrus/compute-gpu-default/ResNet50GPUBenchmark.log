@@ -1,0 +1,7 @@
+job_completion_time|version|info|jobid|perf_var=perf_value|perf_ref perf_lower_thres,perf_upper_thres)perf_unit
+2023-12-11T09:39:57|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu-default+Default|jobid=5156871|null=null|ref=null (l=null, u=null)|null
+2023-12-11T10:56:47|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu-default+Default|jobid=5159320|null=null|ref=null (l=null, u=null)|null
+2023-12-11T11:04:02|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu-default+Default|jobid=5159423|null=null|ref=null (l=null, u=null)|null
+2023-12-11T11:11:17|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu-default+Default|jobid=5159478|null=null|ref=null (l=null, u=null)|null
+2023-12-11T11:19:41|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu-default+Default|jobid=5159483|null=null|ref=null (l=null, u=null)|null
+2023-12-11T11:40:20|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu-default+Default|jobid=5159498|null=null|ref=null (l=null, u=null)|null

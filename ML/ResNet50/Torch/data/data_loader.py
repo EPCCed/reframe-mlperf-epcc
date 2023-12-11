@@ -1,15 +1,33 @@
+import os
+import random
+from networkx import havel_hakimi_graph
+
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
 from torch.utils.data.distributed import DistributedSampler
 from torchvision.datasets import ImageFolder
-import torchvision  
-import os
-import random
+import torchvision
+
 from ML.gc import GlobalContext
 
-gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/configs/archer2_config.yaml")
+gc = GlobalContext()
+
 
 
 def get_train_dataloader():
+
+    path = os.path.join(gc["data"]["data_dir"], "train")
+
+    local_bs = gc["data"]["global_batch_size"] // gc.world_size
+    if gc["data"]["gradient_accumulation_freq"] == -1:
+        if local_bs > 64:
+            gc["data"]["gradient_accumulation_freq"] = local_bs // 64
+
+            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+        else:
+            gc["data"]["gradient_accumulation_freq"] = 1
+    else:
+        local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+
     transform = torchvision.transforms.Compose([
         torchvision.transforms.Resize(256),
         torchvision.transforms.CenterCrop(224),
@@ -17,7 +35,7 @@ def get_train_dataloader():
         torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
                                          ])
-    dataset = ImageFolder(root=os.path.join(gc["data"]["data_dir"], "train"),
+    dataset = ImageFolder(root=path,
                           transform=transform)
 
     if gc["data"]["train_subset"]:
@@ -31,16 +49,7 @@ def get_train_dataloader():
             sampler = RandomSampler(dataset)
         else:
             sampler = SequentialSampler(dataset)
-    local_bs = gc["data"]["global_batch_size"] // gc.world_size
-    if gc["data"]["gradient_accumulation_freq"] == -1:
-        if local_bs > 64:
-            gc["data"]["gradient_accumulation_freq"] = local_bs // 64
 
-            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
-        else:
-            gc["data"]["gradient_accumulation_freq"] = 1
-    else:
-        local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
     
     if gc["data"]["local_batch_size"]:
         gc["data"]["gradient_accumulation_freq"] = 1
@@ -51,12 +60,17 @@ def get_train_dataloader():
                       sampler=sampler,
                       batch_size=local_bs, 
                       drop_last=gc["data"]["drop_last_batch"],
-                      num_workers=1,
+                      num_workers=4,
                       prefetch_factor=gc["data"]["prefetch"],
                       pin_memory = True if gc.device == "cuda" else False 
                       )
 
 def get_val_dataloader():
+    
+    path = os.path.join(gc["data"]["data_dir"], "val")
+
+    local_bs = gc["data"]["global_batch_size"] // gc.world_size
+
     transform = torchvision.transforms.Compose([
         torchvision.transforms.Resize(256),
         torchvision.transforms.CenterCrop(224),
@@ -64,7 +78,7 @@ def get_val_dataloader():
         torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
                                          ])
-    dataset = ImageFolder(root=os.path.join(gc["data"]["data_dir"], "val"),
+    dataset = ImageFolder(root=path,
                           transform=transform)
     if gc["data"]["val_subset"]:
         indices = random.sample(range(len(dataset)), gc["data"]["val_subset"])

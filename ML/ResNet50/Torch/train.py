@@ -12,9 +12,10 @@ import torch.distributed as dist
 from torchmetrics.classification import Accuracy
 from tqdm import tqdm
 
+
 from ML.gc import GlobalContext
 gc = GlobalContext(
-    "/work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/configs/archer2benchmark_config.yaml"
+    "/work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/configs/cirrusbenchmark_config.yaml"
 )
 import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
@@ -27,17 +28,17 @@ def train_step(x, y, model, loss_fn, opt, metric_tracker, batch_idx):
             with model.no_sync():
                 logits = model(x)
                 loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
-                metric_tracker.update(logits, y)
+                #metric_tracker.update(logits, y)
                 loss.backward()
         else:
             logits = model(x)
             loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
-            metric_tracker.update(logits, y)
+            #metric_tracker.update(logits, y)
             loss.backward()
     else:
         logits = model(x)
         loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
-        metric_tracker.update(logits, y)
+        #metric_tracker.update(logits, y)
         loss.backward()
         opt.step()
         opt.zero_grad()
@@ -55,8 +56,8 @@ def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
     for event in list(prof.key_averages()):
         if "mpi:" in event.key:
-            total_time += event.cpu_time_total * 1e-9
-            total_time += event.cuda_time_total * 1e-9
+            total_time += event.cpu_time_total * 1e-6
+            total_time += event.cuda_time_total * 1e-6
     return total_time
 
 
@@ -90,14 +91,14 @@ def main(device, config):
     train_data = dl.get_train_dataloader()
     val_data = dl.get_val_dataloader()
 
-    if gc.rank == -1:  # change to -1 to turn off 0 to turn on
+    if gc.rank == 0:  # change to -1 to turn off 0 to turn on
         train_data = tqdm(train_data, unit="images", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
         val_data = tqdm(val_data)
 
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
-        model.register_comm_hook(state=None, hook=gc.mpi_log_hook)
+        #model.register_comm_hook(state=None, hook=gc.mpi_log_hook)
         if gc.device == "cpu":
             pass
         else:
@@ -135,6 +136,16 @@ def main(device, config):
     val_metric.to(gc.device)
 
     gc.stop_init()
+
+
+    if gc["training"]["benchmark"] and gc.device == "cuda":
+        gc.print_0("Started Warmup")
+        for i in range(5):
+            for x, y in train_data:
+                x, y = x.to(gc.device), y.to(gc.device)
+        gc.print_0("Ended Warmup")
+        dist.barrier()
+
     gc.start_run()
 
     model.train()
@@ -146,7 +157,8 @@ def main(device, config):
         total_io_time = 0
         with gc.profiler(f"Epoch: {E}") as prof:
             start_io = time.time_ns()
-            for i, (x, y) in enumerate(train_data):
+            for i, data in enumerate(train_data):
+                x, y = data
                 x, y = x.to(gc.device), y.to(gc.device)
                 total_io_time += time.time_ns() - start_io
 
@@ -154,23 +166,24 @@ def main(device, config):
 
                 start_io = time.time_ns()
         total_io_time *= 1e-9
-        
-        train_accuracy = train_metric.compute()
-        dist.reduce(train_accuracy, 0)
+
+        #train_accuracy = train_metric.compute()
+        #dist.reduce(train_accuracy, 0)
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0:
-            print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
+            #print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
 
             dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1281167
             print(f"Processing Speed: {(dataset_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
-            print(gc.get_mpi())
-            print(f"Communication Time: {get_comm_time(prof)}")
+            if gc["data"]["n_epochs"] == E:
+                print(f"Communication Time: {get_comm_time(prof)}")
             print(f"Total IO Time: {total_io_time}")
+        dist.barrier()
         gc.start_eval(metadata={"epoch_num": E})
         if E % 4 == 0:
             for x, y in val_data:

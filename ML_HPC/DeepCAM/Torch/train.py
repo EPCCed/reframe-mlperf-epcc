@@ -4,6 +4,7 @@ import sys
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
 import time
+from contextlib import contextmanager
 import warnings
 warnings.filterwarnings("ignore")
 import click
@@ -13,7 +14,7 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/DeepCAM/Torch/configs/archer2benchmark_config.yaml")
+gc = GlobalContext("/work/z043/z043/crae/chris-ml-intern/ML_HPC/DeepCAM/Torch/configs/cirrusbenchmark_config.yaml")
 import ML_HPC.DeepCAM.Torch.data.data_loader as dl
 from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
@@ -52,13 +53,13 @@ def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
     for event in list(prof.key_averages()):
         if "mpi:" in event.key:
-            total_time += event.cpu_time_total * 1e-9
-            total_time += event.cuda_time_total * 1e-9
+            total_time += event.cpu_time_total * 1e-6
+            total_time += event.cuda_time_total * 1e-6
     return total_time
 
 @click.command()
-@click.option("--device", "-d", default="", show_default="", type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
-@click.option("--config", "-c", default="", show_default="", type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
+@click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
+@click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
 def main(device, config):
     if device and device.lower() in ('cpu', "gpu", "cuda"):
         gc["device"] = device.lower()
@@ -79,8 +80,9 @@ def main(device, config):
     gc.log_seed(333)
 
     if gc.device == "cuda":
-        local_rank = os.environ["LOCAL_RANK"]
-        torch.cuda.set_device("cuda:" + local_rank)
+        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+        torch.cuda.set_device("cuda:" + str(local_rank))
     
     gc.start_init()
     
@@ -120,6 +122,7 @@ def main(device, config):
     loss_pow = -0.125
     class_weights = [0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow]
     criterion = CELoss(class_weights).to(gc.device)
+    scaler = torch.cuda.amp.grad_scaler.GradScaler(enabled=gc["training"]["amp"] and gc.device == "cuda")
     
     gc.stop_init()
     gc.start_run()
@@ -137,25 +140,29 @@ def main(device, config):
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
             for idx, (x, y, _) in enumerate(train_data):
-                total_io_time += time.time_ns() - start_io
                 x, y = x.to(gc.device), y.to(gc.device)
+                total_io_time += time.time_ns() - start_io
                 
                 if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
-                            logits = model.forward(x)
-                            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
-                            loss.backward()
+                            with torch.autocast(device_type=gc.device, dtype=torch.float16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                                logits = model.forward(x)
+                                loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                            scaler.scale(loss).backward()
                         
                     else:
+                        with torch.autocast(device_type=gc.device, dtype=torch.float16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                            logits = model.forward(x)
+                            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                        scaler.scale(loss).backward()
+                else: 
+                    with torch.autocast(device_type=gc.device, dtype=torch.float16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
                         logits = model.forward(x)
                         loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
-                        loss.backward()
-                else: 
-                    logits = model.forward(x)
-                    loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
-                    loss.backward()
-                    opt.step()
+                    scaler.scale(loss).backward()
+                    scaler.step(opt)
+                    scaler.update()
                     opt.zero_grad(set_to_none=True)
                     scheduler.step()
                 start_io = time.time_ns()
@@ -165,10 +172,11 @@ def main(device, config):
         total_time = torch.tensor(total_time)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
-        print(f"Processing Speed: {(train_data_size/total_time).item()}")
-        print(f"Time For Epoch: {total_time}")
-        print(f"Communication Time: {get_comm_time(prof)}")
-        print(f"Total IO Time: {total_io_time}")
+        if gc.rank == 0:
+            print(f"Processing Speed: {(train_data_size/total_time).item()}")
+            print(f"Time For Epoch: {total_time}")
+            print(f"Communication Time: {get_comm_time(prof)}")
+            print(f"Total IO Time: {total_io_time}")
 
 
         loss_avg = loss.detach()
