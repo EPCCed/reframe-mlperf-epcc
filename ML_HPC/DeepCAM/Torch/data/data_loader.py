@@ -173,7 +173,7 @@ def get_datashapes():
 
 def get_dataloaders():
     # import only what we need
-    train_dir = os.path.join(gc["data"]["data_dir"], "train") if "mini" not in gc["data"]["data_dir"] else gc["data"]["data_dir"]
+    train_dir = os.path.join(gc["data"]["data_dir"], "train")
     train_set = CamDataset(train_dir, 
                            statsfile = os.path.join(gc["data"]["data_dir"], 'stats.h5'),
                            channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
@@ -191,7 +191,7 @@ def get_dataloaders():
     
     train_loader = DataLoader(train_set,
                               batch_size=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"],
-                              num_workers =1,
+                              num_workers =4,
                               sampler = distributed_train_sampler,
                               pin_memory = True if gc.device != "cpu" else False,
                               drop_last = True,
@@ -199,7 +199,7 @@ def get_dataloaders():
 
     train_size = train_set.global_size
 
-    validation_dir = os.path.join(gc["data"]["data_dir"], "validation") if "mini" not in gc["data"]["data_dir"] else gc["data"]["data_dir"]
+    validation_dir = os.path.join(gc["data"]["data_dir"], "validation")
     validation_set = CamDataset(validation_dir, 
                                 statsfile = os.path.join(gc["data"]["data_dir"], 'stats.h5'),
                                 channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
@@ -212,7 +212,7 @@ def get_dataloaders():
     # use batch size = 1 here to make sure that we do not drop a sample
     validation_loader = DataLoader(validation_set,
                                    batch_size=1,
-                                   num_workers = 1,
+                                   num_workers = 4,
                                    pin_memory = True if gc.device != "cpu" else False,
                                    drop_last = False,
                                    prefetch_factor=gc["data"]["prefetch"])

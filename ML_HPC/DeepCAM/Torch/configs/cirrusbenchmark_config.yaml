@@ -1,11 +1,11 @@
-device: cpu
+device: cuda
 
 data:
     data_dir: /work/z04/shared/mlperf-hpc/deepcam/mini/deepcam-data-n512
-    global_batch_size: 64
-    gradient_accumulation: 1
+    global_batch_size: 32
+    gradient_accumulation: 2
     shuffle: True
-    n_epochs: 128
+    n_epochs: 1
     prefetch: 4
 
 opt:
@@ -28,4 +28,4 @@ lr_schedule:
 
 training:
     target_iou: 0.82  
-    
+    amp: True  # needs gpu

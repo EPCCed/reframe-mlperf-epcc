@@ -28,4 +28,5 @@ lr_schedule:
 
 training:
     target_iou: 0.82  
+    amp: False  # needs gpu
     
