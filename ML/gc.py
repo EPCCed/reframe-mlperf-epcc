@@ -43,11 +43,15 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             
     @property
     def rank(self):
-        return dist.get_rank()
+        if "rank" not in self.keys():
+            self["rank"] = dist.get_rank()
+        return self["rank"]
     
     @property
     def world_size(self):
-        return dist.get_world_size()
+        if "world_size" not in self.keys():
+            self["world_size"] = dist.get_world_size()
+        return self["world_size"]
     
     @property
     def device(self):
@@ -80,7 +84,32 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             _call_log_timer()
             return fut
         return _time_mpi
-
+    
+    @property
+    def multi_node_hook(self):
+        taskspernode = self.world_size // int(os.environ["SLURM_NNODES"])    
+        node = self.rank // taskspernode
+        print(self.rank, node, list([i for i in range(self.world_size) if i % taskspernode == 0]), list([node*taskspernode + i for i in range(taskspernode)])) 
+        self["L0_ranks"] = dist.new_group(ranks=list([i for i in range(self.world_size) if i % taskspernode == 0]))
+        self["local_ranks"] = dist.new_group(ranks=list([node*taskspernode + i for i in range(taskspernode)]))  # could use nccl 
+            
+        def _all_reduce(fut0):
+            fut1 = dist.reduce(fut0.value()[0], dst=0, group=self["local_ranks"], async_op=True).get_future()
+            fut2 = dist.all_reduce(fut1.value()[0], group=self["L0_ranks"], async_op=True).get_future()
+            return dist.broadcast(fut2.value()[0], src=0, group=self["local_ranks"], async_op=True).get_future()
+        
+        def _dev(fut):
+            return fut.value()[0] / self.world_size
+        
+        def _custom_hook(state, bucket):
+            fut = torch.futures.Future()
+            fut.set_result(bucket.buffer())
+            fut.then(_all_reduce)
+            return fut.then(_dev)
+            
+        return _custom_hook
+        
+        
     def get_mpi(self):
         return self._mpi_total_time*1e-9
     

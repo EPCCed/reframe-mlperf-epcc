@@ -580,7 +580,7 @@ class Bottleneck(nn.Module):
     
                 
 class DeepLabv3_plus(nn.Module):
-    def __init__(self, n_input=3, n_classes=21, os=16, pretrained=False, _print=True, rank = 0, process_group = None, enable_gbn = False):
+    def __init__(self, n_input=3, n_classes=21, os=16, pretrained=False, _print=False, rank = 0, process_group = None, enable_gbn = False):
         if _print and (rank == 0):
             print("Constructing DeepLabv3+ model...")
             print("Number of output channels: {}".format(n_classes))

@@ -52,7 +52,7 @@ def dummy_loaders(n_samples):
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
     for event in list(prof.key_averages()):
-        if "mpi:" in event.key:
+        if "mpi:" in event.key or "nccl" in event.key:
             total_time += event.cpu_time_total * 1e-6
             total_time += event.cuda_time_total * 1e-6
     return total_time

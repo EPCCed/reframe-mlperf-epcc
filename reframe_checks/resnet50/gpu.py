@@ -20,7 +20,7 @@ class ResNet50GPUBenchmark(ResNet50BaseCheck):
             "OMPI_MCA_mpi_warn_on_fork": "0",
             "PARAMS": '"--ntasks=32 --tasks-per-node=4"',
         }
-    prerun_cmds = ['eval "$(/work/z043/z043/crae/miniconda3/bin/conda shell.bash hook)"', 
+    prerun_cmds = ['eval "$(/work/z043/shared/miniconda3/bin/conda shell.bash hook)"', 
                             "conda activate mlperf-torch", 
         ]
     executable = 'python'

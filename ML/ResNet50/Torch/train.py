@@ -60,6 +60,28 @@ def get_comm_time(prof: torch.profiler.profile):
             total_time += event.cuda_time_total * 1e-6
     return total_time
 
+def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.Future[torch.Tensor]:
+    
+    local_ranks, zero_ranks, taskspernode = state    
+    
+    def _local_reduce(tensor):
+        return dist.reduce(tensor, 0, group=local_ranks, async_op=True).get_future()
+    
+    def _all_reduce_zeros(fut):
+        return dist.all_reduce(fut.value()[0], 0, group=zero_ranks, async_op=True).get_future().value()[0]
+    
+    def _local_broadcast(fut):
+        return dist.broadcast(fut.value()[0], 0, group=local_ranks, async_op=True).get_future().value()[0]
+    
+    def _dev(fut):
+        return fut.value()[0] / gc.world_size
+    
+    fut = _local_reduce(bucket.buffer())
+    if gc.rank % taskspernode == 0:
+        fut.then(_all_reduce_zeros)
+    fut.then(_local_broadcast)
+    return fut.then(_dev)
+
 
 @click.command()
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
@@ -78,6 +100,9 @@ def main(device, config):
     else:
         backend = "gloo"
     dist.init_process_group(backend)
+    
+    gc.rank
+    gc.world_size
 
     if gc.device == "cuda":
         taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
@@ -90,15 +115,28 @@ def main(device, config):
 
     train_data = dl.get_train_dataloader()
     val_data = dl.get_val_dataloader()
-
+    
     if gc.rank == 0:  # change to -1 to turn off 0 to turn on
-        train_data = tqdm(train_data, unit="images", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
-        val_data = tqdm(val_data)
-
+        train_data = tqdm(train_data, unit="images", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"]) 
+    
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
-        #model.register_comm_hook(state=None, hook=gc.mpi_log_hook)
+        
+        taskspernode = gc.world_size // int(os.environ["SLURM_NNODES"])
+        node = gc.rank // taskspernode
+        zeros_ranks = list([i for i in range(gc.world_size) if i % taskspernode == 0])
+        local_ranks = list([node*taskspernode + i for i in range(taskspernode)])
+        
+        print(gc.rank, node, zeros_ranks, local_ranks) 
+        #zeros_group = dist.new_group(zeros_ranks, backend="mpi")
+        """
+        local_groups = [] 
+        for i in range(gc.world_size//taskspernode):
+            local_groups.append(dist.new_group(list([j + i*taskspernode for j in range(taskspernode)])))
+        local_group = local_groups[node]
+        """
+        #model.register_comm_hook((local_group, zeros_group, taskspernode), custom_reduce_hook)
         if gc.device == "cpu":
             pass
         else:
@@ -147,10 +185,11 @@ def main(device, config):
         dist.barrier()
 
     gc.start_run()
-
+    
     model.train()
 
     E = 1
+    
     while True:
         start = time.time()
         gc.start_epoch(metadata={"epoch_num": E})

@@ -2,8 +2,6 @@ import reframe as rfm
 import reframe.utility.sanity as sn
 
 class CosmoFlowBaseCheck(rfm.RunOnlyRegressionTest):
-    def __init__(self):
-        super().__init__()
 
     @performance_function("inputs/s", perf_key="Throughput")
     def extract_throughput(self):

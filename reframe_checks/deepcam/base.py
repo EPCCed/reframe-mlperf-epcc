@@ -2,9 +2,6 @@ import reframe as rfm
 import reframe.utility.sanity as sn
 
 class DeepCamBaseCheck(rfm.RunOnlyRegressionTest):
-    def __init__(self):
-        super().__init__()
-
     @performance_function("inputs/s", perf_key="Throughput")
     def extract_throughput(self):
         return sn.extractsingle(r"Processing Speed: (.*)", self.stdout, tag= 1, conv=float)
