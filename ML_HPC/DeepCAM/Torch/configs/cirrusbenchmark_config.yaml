@@ -2,11 +2,11 @@ device: cuda
 
 data:
     data_dir: /work/z04/shared/mlperf-hpc/deepcam/mini/deepcam-data-n512
-    global_batch_size: 32
-    gradient_accumulation: 2
+    global_batch_size: 16
+    gradient_accumulation: 1
     shuffle: True
     n_epochs: 1
-    prefetch: 4
+    prefetch: 16
 
 opt:
     name: Adam
@@ -28,4 +28,4 @@ lr_schedule:
 
 training:
     target_iou: 0.82  
-    amp: True  # needs gpu
+    amp: False  # needs gpu

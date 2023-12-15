@@ -12,17 +12,17 @@ conda create --name mlperf-torch python=3.10
 
 # Download Torch
 ```bash
-wget https://github.com/pytorch/pytorch/releases/download/v2.0.1/pytorch-v2.0.1.tar.gz
-tar -xf ./pytorch-v2.0.1.tar.gz
-# OPTIONAL
-rm ./pytorch-v2.0.1.tar.gz
+git clone --single-branch --branch release/2.0 https://github.com/pytorch/pytorch.git
+cd pytorch
+git submodule sync
+git submodule update --init --recursive
 ```
 
 # Install dependencies
 ```bash
 source $PREFIX/miniconda/bin/activate mlperf-torch
 conda install cmake ninja
-cd ./pytorch-v2.0.1
+cd ./pytorch
 pip install -r requirements.txt
 conda install mkl mkl-include
 ```
@@ -52,12 +52,14 @@ export OMP_NUM_THREADS=1
 
 module load PrgEnv-gnu
 
-cd /work/ta127/ta127/chrisrae/pytorch-v2.0.1
+cd /work/ta127/ta127/chrisrae/pytorch
 
 export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"}
 export USE_CUDA=0
+export USE_ROCM=0
 export USE_DISTRIBUTED=1
 export BUILD_CAFFE2=0
+export BUILD_TEST=0
 
 python setup.py develop
 ```

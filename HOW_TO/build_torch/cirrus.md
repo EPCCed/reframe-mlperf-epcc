@@ -31,7 +31,7 @@ conda install cmake ninja
 #cd into pytorch if not already
 pip install -r requirements.txt
 conda install mkl mkl-include
-conda install -c pytorch magma-cuda116+
+conda install -c pytorch magma-cuda116
 ```
 
 # Build Pytorch
@@ -62,6 +62,7 @@ srun --exclusive --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:
 source $PREFIX/miniconda/bin/activate mlperf-torch
 module unload cmake
 module swap gcc gcc/10.2.0
+module load openmpi/4.1.5-cuda-11.6
 cd vision
 python setup.py develop
 ```

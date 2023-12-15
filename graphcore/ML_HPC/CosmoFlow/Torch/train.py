@@ -53,7 +53,6 @@ def main(config):
     options.randomSeed(1)
     torch.manual_seed(1)
 
-
     gc.log_cosmoflow()
     gc.start_init()
     gc.log_seed(1)

@@ -11,9 +11,10 @@ import click
 import torch 
 import torch.nn as nn
 import torch.distributed as dist
+from tqdm import tqdm
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/CosmoFlow/Torch/config.yaml")
+gc = GlobalContext()
 from ML_HPC.CosmoFlow.Torch.model.cosmoflow import StandardCosmoFlow
 from ML_HPC.CosmoFlow.Torch.data.TF_record_loader import get_train_dataloader, get_val_dataloader
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
@@ -49,19 +50,22 @@ def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
     for event in list(prof.key_averages()):
         if "mpi:" in event.key:
-            total_time += event.cpu_time_total * 1e-9
-            total_time += event.cuda_time_total * 1e-9
+            total_time += event.cpu_time_total * 1e-6
+            total_time += event.cuda_time_total * 1e-6
     return total_time
 
 @click.command()
-@click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
-@click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
+@click.option("--device", "-d", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
+@click.option("--config", "-c", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
 def main(device, config):
     if device and device.lower() in ('cpu', "gpu", "cuda"):
         gc["device"] = device.lower()
     if config:
         gc.update_config(config)
-
+        
+    torch.backends.cudnn.benchmark = True
+    print(gc.device)
+    
     torch.manual_seed(1)
     if dist.is_mpi_available():
         backend = "mpi"
@@ -81,6 +85,9 @@ def main(device, config):
     
     train_data = get_train_dataloader()
     val_data = get_val_dataloader()
+    
+    if gc.rank == 0:
+        train_data = tqdm(train_data, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
 
     model = StandardCosmoFlow().to(gc.device)
     if gc.world_size > 1:
@@ -167,7 +174,7 @@ def main(device, config):
         gc.stop_epoch(metadata={"epoch_num": epoch+1})
         
         epoch += 1
-        if mae <= gc["training"]["target_mae"] or epoch == gc["data"]["n_epochs"]:
+        if mae <= gc["training"]["target_mae"] or epoch >= gc["data"]["n_epochs"]:
             if mae <= gc["training"]["target_mae"]:
                 gc.log_event(key="target_mae_reached", value=gc["training"]["target_mae"], metadata={"epoch_num": epoch+1})
             gc.stop_run()

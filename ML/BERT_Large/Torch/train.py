@@ -9,14 +9,13 @@ import click
 import torch 
 import torch.nn as nn
 import torch.distributed as dist
-from flash.core.optimizers import LAMB
 
 from ML.gc import GlobalContext
 gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML/BERT_Large/Torch/config.yaml")
 from ML.BERT_Large.Torch.model.BERT import get_bertlarge
 from ML.BERT_Large.Torch.data.data_loader import get_pretrian_dataloader, get_eval_dataset
 from ML.BERT_Large.Torch.lr_scheduler.schedulers import LinearWarmupPolyDecayScheduler, LinearWarmUpScheduler
-from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
+from ML.BERT_Large.Torch.optimizer.lamb import Lamb
 
 def per_worker_files(files):
     return [files[i::gc.world_size] for i in range(gc.world_size)][gc.rank]
@@ -60,7 +59,7 @@ def run_eval(model,eval_dataloader,):
     model.train()
     total_masked = torch.tensor(total_masked, device=gc.device, dtype=torch.int64)
     total_eval_loss = torch.tensor(total_eval_loss, device=gc.device, dtype=torch.float64)
-    if torch.distributed.is_initialized():
+    if dist.is_initialized():
         # Collect total scores from all ranks
         dist.all_reduce(total_eval_mlm_acc, op=dist.ReduceOp.SUM)
         dist.all_reduce(total_eval_loss, op=dist.ReduceOp.SUM)
@@ -105,7 +104,7 @@ def main(device, config):
         model = nn.parallel.DistributedDataParallel(model)
         
     if gc["opt"]["name"].upper() == "LAMB":
-        opt = LAMB(model.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=gc["opt"]["betas"], weight_decay=gc["opt"]["wight_decay"])
+        opt = Lamb(model.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=gc["opt"]["betas"], weight_decay=gc["opt"]["wight_decay"])
     else:
         raise NameError(f"Optimiser {gc['opt']['name']} not supported please use LAMB")
     
