@@ -2,6 +2,8 @@ import reframe as rfm
 import reframe.utility.sanity as sn
 
 class ResNet50BaseCheck(rfm.RunOnlyRegressionTest):
+    
+    tags = {"performance"}
 
     @performance_function("images/s", perf_key="Throughput")
     def extract_throughput(self):
@@ -21,7 +23,7 @@ class ResNet50BaseCheck(rfm.RunOnlyRegressionTest):
 
     @sanity_function
     def assert_target_met(self):
-        return sn.assert_found(r'Processing Speed', filename=self.stdout)
+        return sn.assert_found(r'"key": "run_stop"', filename=self.stdout)
     
     @run_before("performance")
     def set_perf_variables(self):

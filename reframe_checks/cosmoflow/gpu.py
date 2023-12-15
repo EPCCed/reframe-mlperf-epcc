@@ -33,7 +33,6 @@ class CosmoFlowGPUBenchmark(CosmoFlowBaseCheck):
         self.job.options = ["--nodes=8", "--exclusive"]  # make sure you change ntasks in PARAMS
 
 
-
     @run_after("setup")
     def setup_gpu_options(self):
         """sets up different resources for gpu systems"""

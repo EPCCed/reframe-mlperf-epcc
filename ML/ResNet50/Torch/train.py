@@ -1,6 +1,8 @@
 import os
 from pathlib import Path
 import sys
+
+from sympy import tensorcontraction
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
 import csv
@@ -64,22 +66,26 @@ def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.
     
     local_ranks, zero_ranks, taskspernode = state    
     
-    def _local_reduce(tensor):
-        return dist.reduce(tensor, 0, group=local_ranks, async_op=True).get_future()
+    def _reduce(tensor):
+        fut = dist.reduce(tensor, 0, group=local_ranks, async_op=True).get_future()
+        if gc.rank %taskspernode == 0:
+            return fut.then(_all_reduce_zeros)
+        else:
+            return fut.then(_local_broadcast)
     
     def _all_reduce_zeros(fut):
-        return dist.all_reduce(fut.value()[0], 0, group=zero_ranks, async_op=True).get_future().value()[0]
+        return dist.all_reduce(fut.value()[0], 0, group=zero_ranks, async_op=True).get_future().then(_local_broadcast).value()[0]
     
     def _local_broadcast(fut):
-        return dist.broadcast(fut.value()[0], 0, group=local_ranks, async_op=True).get_future().value()[0]
+        tensor = fut.value()[0]
+        dist.broadcast(tensor, 0, group=local_ranks)
+        return tensor
     
     def _dev(fut):
         return fut.value()[0] / gc.world_size
     
-    fut = _local_reduce(bucket.buffer())
-    if gc.rank % taskspernode == 0:
-        fut.then(_all_reduce_zeros)
-    fut.then(_local_broadcast)
+    fut = _reduce(bucket.buffer())
+    
     return fut.then(_dev)
 
 

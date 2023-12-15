@@ -24,8 +24,8 @@ class ResNet50GPUBenchmark(ResNet50BaseCheck):
                             "conda activate mlperf-torch", 
         ]
     executable = 'python'
-    executable_opts = ["/work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/train.py",
-                                "--config", "/work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/configs/cirrusbenchmark_config.yaml",
+    executable_opts = ["/work/z043/shared/chris-ml-intern/ML/ResNet50/Torch/train.py",
+                                "--config", "/work/z043/shared/chris-ml-intern/ML/ResNet50/Torch/configs/cirrusbenchmark_config.yaml",
                                 "--device", "cuda"
         ]
     reference = {"cirrus:compute-gpu-default": {"Throughput": (1000, -0.05, 0.05, "images/s"),

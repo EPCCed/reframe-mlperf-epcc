@@ -11,7 +11,7 @@ class DeepCamGPUBenchmark(DeepCamBaseCheck):
     num_tasks = None
     extra_resources = {
             "qos": {"qos": "gpu"},
-            "gpu": {"num_gpus_per_node": "2"},
+            "gpu": {"num_gpus_per_node": "4"},
         }
     time_limit = "1h"
     env_vars = {
