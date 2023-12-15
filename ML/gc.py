@@ -77,12 +77,15 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
 
         def _call_log_timer():
             self._mpi_total_time += time.time_ns() - self._mpi_iter_start_time
+        
+        def _dev(fut):
+            _call_log_timer()
+            return fut.value()[0] /self.world_size
 
         def _time_mpi(state, bucket):
             _call_start_timer()
-            fut = dist.all_reduce(bucket.buffer()).get_future()
-            _call_log_timer()
-            return fut
+            fut = dist.all_reduce(bucket.buffer(), async_op=True).get_future()
+            return fut.then(_dev)
         return _time_mpi
     
     @property

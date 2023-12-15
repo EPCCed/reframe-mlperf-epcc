@@ -48,6 +48,8 @@ class ResNet50(nn.Module):
         self.layer4 = self._make_layer(Bottleneck, 512, num_blocks[3], 2)
         self.linear = nn.Linear(512*Bottleneck.expansion, num_classes)
 
+        self.criterion = torch.nn.CrossEntropyLoss()
+
     def _make_layer(self, block, planes, num_blocks, stride):
         strides = [stride] + [1]*(num_blocks-1)
         layers = []
@@ -56,7 +58,7 @@ class ResNet50(nn.Module):
             self.in_planes = planes * block.expansion
         return nn.Sequential(*layers)
 
-    def forward(self, x):
+    def forward(self, x, target):
         out = F.relu(self.bn1(self.conv1(x)))
         out = F.max_pool2d(out, (3, 3), (2, 2), (1, 1))
         out = self.layer1(out)
@@ -66,7 +68,7 @@ class ResNet50(nn.Module):
         out = F.adaptive_avg_pool2d(out, (1, 1))
         out = out.view(out.size(0), -1)
         out = self.linear(out)
-        return out
+        return (out, self.criterion(out, target))
 
 
 if __name__ == "__main__":

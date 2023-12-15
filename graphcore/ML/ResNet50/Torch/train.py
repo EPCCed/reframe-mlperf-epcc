@@ -9,6 +9,7 @@ import time
 
 import torch
 import torch.distributed as dist
+import poptorch
 from torchmetrics.classification import Accuracy
 from tqdm import tqdm
 
@@ -20,30 +21,6 @@ import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
 
-
-def train_step(x, y, model, loss_fn, opt, metric_tracker, batch_idx):
-    if (batch_idx+1)% gc["data"]["gradient_accumulation_freq"] != 0:
-        if isinstance(model, torch.nn.parallel.DistributedDataParallel):
-            with model.no_sync():
-                logits = model(x)
-                loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
-                metric_tracker.update(logits, y)
-                loss.backward()
-        else:
-            logits = model(x)
-            loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
-            metric_tracker.update(logits, y)
-            loss.backward()
-    else:
-        logits = model(x)
-        loss = loss_fn(logits, y)/gc["data"]["gradient_accumulation_freq"]
-        metric_tracker.update(logits, y)
-        loss.backward()
-        opt.step()
-        opt.zero_grad()
-    return loss
-
-
 def valid_step(x, y, model, loss_fn, metric_tracker):
     with torch.no_grad():
         logits = model(x)
@@ -53,67 +30,45 @@ def valid_step(x, y, model, loss_fn, metric_tracker):
 
 
 @click.command()
-@click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
-def main(device, config):
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
-        gc["device"] = device.lower()
+def main(config):
     if config:
         gc.update_config(config)
-    
-    torch.manual_seed(0)
-    if dist.is_mpi_available():
-        backend = "mpi"
-    elif gc.device == "cuda":
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    dist.init_process_group(backend)
-    print(f"Hello From Rank {gc.rank}")
 
-    if gc.device == "cuda":
-        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-        torch.cuda.set_device("cuda:" + str(local_rank))
+    options = poptorch.Options()
+    val_options = poptorch.Options()
+    options.replicationFactor(gc["training"]["num_ipus"])
+    options.randomSeed(1)
+    torch.manual_seed(1)
 
-    train_data = dl.get_train_dataloader()
-    val_data = dl.get_val_dataloader()
-    if gc.rank == 0:  # change to -1 to turn off
-        train_data = tqdm(train_data, unit="images", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
-        val_data = tqdm(val_data)
+    train_data = dl.get_train_dataloader(options)
+    val_data = dl.get_val_dataloader(val_options)
 
-    model = ResNet50(num_classes=1000).to(gc.device)
-    if gc.world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(model)
-        if gc.device == "cpu":
-            pass
-        else:
-            model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(model)
+    net = ResNet50(num_classes=1000)
 
     if gc["opt"]["name"].upper() == "SGD":
         opt = torch.optim.SGD(
-            model.parameters(),
+            net.parameters(),
             lr=gc["lr_schedule"]["base_lr"],
             momentum=gc["opt"]["momentum"],
             weight_decay=gc["opt"]["weight_decay"],
         )
-    elif gc.opt.name.upper() == "LARS":
-        opt = LARS(
-            model.parameters(),
-            lr=gc["lr_schedule"]["base_lr"],
-            momentum=gc["opt"]["momentum"],
-            weight_decay=gc["opt"]["weight_decay"],
-        )
+    elif gc["opt"]["name"].upper() == "LARS":
+        raise AttributeError("LARS optimizer is not supported on graphcore")
     else:
         raise ValueError(
             f"Optimiser {gc['opt']['name']} not supported please use SGD|LARS"
         )
 
+    model = poptorch.trainingModel(net, options=options, optimizer=opt)
+
+    eval_model = poptorch.inferenceModel(net, options=val_options)
+
+    
+
     scheduler = torch.optim.lr_scheduler.PolynomialLR(
         opt, total_iters=gc["data"]["n_epochs"], power=gc["lr_schedule"]["poly_power"]
     )
-
-    loss_fn = torch.nn.CrossEntropyLoss()
 
     train_metric = Accuracy(task="multiclass", num_classes=1000)
     val_metric = Accuracy(task="multiclass", num_classes=1000)
@@ -126,11 +81,10 @@ def main(device, config):
     E = 1
     while True:
         start = time.time()
-        for i, (x, y) in enumerate(train_data):
-            x, y = x.to(gc.device), y.to(gc.device)
-            loss = train_step(x, y, model, loss_fn, opt, train_metric, i)
+        for x, y in train_data:
+            out, loss = model(x, y)
         
-        train_accuracy = train_metric.compute()
+        train_accuracy = train_metric(out, y)
         dist.reduce(train_accuracy, 0)
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
@@ -141,22 +95,11 @@ def main(device, config):
             print(f"Train Loss at Epoch {E}: {loss}")
             dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1000000
             print(f"Processing Speed: {(dataset_size/total_time).item()}")
-            with open("./results.csv", "r", newline="") as file:
-                reader = csv.reader(file)
-                rows = list([row for row in reader])
-            with open("./results.csv", "w", newline="") as file:
-                writer = csv.writer(file)
-                new_row = ["cirrus", gc.device, gc["data"]["global_batch_size"], gc.world_size, int(os.environ["SLURM_NNODES"]), dataset_size, (dataset_size/total_time).item()]
-                for row in rows:
-                    writer.writerow(row)
-                writer.writerow(new_row)
-        exit()
-
-
 
         if E % 4 == 0:
             for x, y in val_data:
-                loss = valid_step(x, y, model, loss_fn, val_metric)
+                out, loss = eval_model(x,y)
+                val_metric(out, y)
             val_accuracy = val_metric.compute()
             dist.all_reduce(val_accuracy)
             if gc.rank == 0:
