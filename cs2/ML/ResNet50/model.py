@@ -70,11 +70,11 @@ class ResNet50(nn.Module):
         out = self.linear(out)
         return out
 
-class ResNet50Model(PyTorchBaseModel):
-    def __init__(self, params, device=None):
+class ResNet50Model(nn.Module):
+    def __init__(self, params):
+        super().__init__()
         self.model = ResNet50()
         self.criterion = nn.CrossEntropyLoss()
-        super().__init__(params=params, model=self.model, device=device)
     
     def __call__(self, data):
         x, y = data
