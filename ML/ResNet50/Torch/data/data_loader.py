@@ -1,6 +1,5 @@
 import os
 import random
-from networkx import havel_hakimi_graph
 
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler, Subset
 from torch.utils.data.distributed import DistributedSampler

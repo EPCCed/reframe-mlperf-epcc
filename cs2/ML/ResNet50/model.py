@@ -2,9 +2,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modelzoo.common.pytorch.PyTorchBaseModel import PyTorchBaseModel
-
-
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -71,7 +68,7 @@ class ResNet50(nn.Module):
         return out
 
 class ResNet50Model(nn.Module):
-    def __init__(self, params):
+    def __init__(self):
         super().__init__()
         self.model = ResNet50()
         self.criterion = nn.CrossEntropyLoss()
