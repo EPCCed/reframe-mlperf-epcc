@@ -45,10 +45,10 @@ def get_train_dataloader(params):
         torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
                                          ])
-    target_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
-    dataset = ImageFolder(root=params["data_dir"],
+    #target_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+    dataset = ImageFolder(root=os.path.join(os.getcwd(), params["data_dir"]),
                           transform=transform,
-                          target_transform=target_transform)
+                          )  # target_transform=target_transform)
     return DataLoader(dataset, 
                       batch_size=params["batch_size"], 
                       drop_last=params["drop_last_batch"],
@@ -65,10 +65,10 @@ def get_val_dataloader(params):
         torchvision.transforms.Normalize(mean=[0.485, 0.456, 0.406],
                                          std=[0.229, 0.224, 0.225])
                                          ])
-    target_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
+    #target_transform = torchvision.transforms.Compose([torchvision.transforms.ToTensor()])
     dataset = ImageFolder(root=params["data_dir"],
                           transform=transform,
-                          target_transform=target_transform)
+                          )  # target_transform=target_transform)
     return DataLoader(dataset, 
                       batch_size=params["batch_size"], 
                       drop_last=params["drop_last_batch"],
