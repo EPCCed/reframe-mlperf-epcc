@@ -2,7 +2,7 @@ device: cuda
 
 data:
     data_dir: /work/z04/shared/mlperf-hpc/deepcam/mini/deepcam-data-n512
-    global_batch_size: 16
+    global_batch_size: 8
     gradient_accumulation: 1
     shuffle: True
     n_epochs: 1

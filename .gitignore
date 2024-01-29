@@ -5,3 +5,5 @@ slurm*.out
 ML/ResNet50/Torch/results.csv
 reframe*.*
 rfm*
+*.pickle
+cs2/modelzoo

@@ -2,10 +2,8 @@ import os
 from pathlib import Path
 import sys
 
-from sympy import tensorcontraction
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
-import csv
 import click
 import time
 
