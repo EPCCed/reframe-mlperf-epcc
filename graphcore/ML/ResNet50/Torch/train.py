@@ -8,7 +8,6 @@ import click
 import time
 
 import torch
-import torch.distributed as dist
 import poptorch
 from torchmetrics.classification import Accuracy
 from tqdm import tqdm
@@ -73,9 +72,6 @@ def main(config):
     train_metric = Accuracy(task="multiclass", num_classes=1000)
     val_metric = Accuracy(task="multiclass", num_classes=1000)
 
-    train_metric.to(gc.device)
-    val_metric.to(gc.device)
-
     model.train()
 
     E = 1
@@ -85,29 +81,23 @@ def main(config):
             out, loss = model(x, y)
         
         train_accuracy = train_metric(out, y)
-        dist.reduce(train_accuracy, 0)
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
-        dist.all_reduce(total_time)
-        total_time /= gc.world_size
-        if gc.rank == 0:
-            print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
-            print(f"Train Loss at Epoch {E}: {loss}")
-            dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1000000
-            print(f"Processing Speed: {(dataset_size/total_time).item()}")
+        print(f"Train Accuracy at Epoch {E}: {train_accuracy}")
+        print(f"Train Loss at Epoch {E}: {loss}")
+        dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1000000
+        print(f"Processing Speed: {(dataset_size/total_time).item()}")
 
         if E % 4 == 0:
             for x, y in val_data:
                 out, loss = eval_model(x,y)
                 val_metric(out, y)
             val_accuracy = val_metric.compute()
-            dist.all_reduce(val_accuracy)
-            if gc.rank == 0:
-                print(f"Train Accuracy at Epoch {E}: {val_accuracy/gc.world_size}")
-                print(f"Validation Loss at Epoch {E}: {loss}")
+            print(f"Train Accuracy at Epoch {E}: {val_accuracy}")
+            print(f"Validation Loss at Epoch {E}: {loss}")
         E += 1
         if "val_accuracy" in dir(): 
-            if E == gc["data"]["n_epochs"] or val_accuracy/gc.world_size >= gc["training"]["target_accuracy"]:
+            if E == gc["data"]["n_epochs"] or val_accuracy >= gc["training"]["target_accuracy"]:
                 break
         scheduler.step()
 

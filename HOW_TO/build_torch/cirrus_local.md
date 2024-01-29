@@ -1,13 +1,13 @@
 # Setup Miniconda
 
 ```bash
-export $PREFIX=/work/ta127/ta127/chrisrae/
+export $PREFIX=/work/z043/z043/chrisrae/
 wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash ./Miniconda3-latest-Linux-x86_64.sh
 #When installing make sure you install miniconda in the correct PREFIX 
 #Make sure that miniconda is installed in /work not /home
 eval "$($PREFIX/miniconda3/bin/conda shell.bash hook)"
-conda create --name mlperf-torch python=3.10
+conda create --name build-torch python=3.10
 ```
 
 # Download Torch
@@ -20,7 +20,15 @@ git submodule update --init --recursive
 
 # Install Dependicies
 ```bash
-source $PREFIX/miniconda/bin/activate mlperf-torch
+conda install cmake ninja
+#cd into pytorch if not already
+pip install -r requirements.txt
+conda install mkl mkl-include
+```
+
+# Install Dependicies
+```bash
+source $PREFIX/miniconda/bin/activate build-torch
 conda install -c "nvidia/label/cuda-11.6.0" cuda-toolkit
 conda install -c nvidia cudatoolkit=11.6
 conda install -c nvidia cudnn
@@ -35,8 +43,8 @@ conda install -c pytorch magma-cuda116
 
 # Build Pytorch
 ```bash
-srun --exclusive --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:1 --account=[CODE] --pty /usr/bin/bash --login
-source $PREFIX/miniconda/bin/activate mlperf-torch
+srun --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:1 --account=[CODE] --pty /usr/bin/bash --login
+source $PREFIX/miniconda/bin/activate build-torch
 export USE_ROCM=0
 export BUILD_TEST=0
 export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"}
@@ -53,7 +61,7 @@ module load openmpi/4.1.5-cuda-11.6
 python setup.py develop
 ```
 
-## Build torchvision (for resnet)
+# Build TorchVision
 ```bash
 git clone --single-branch --branch release/0.15 https://github.com/pytorch/vision.git
 conda install libpng libjpeg-turbo
@@ -65,3 +73,34 @@ module load openmpi/4.1.5-cuda-11.6
 cd vision
 python setup.py develop
 ```
+
+# Clean up
+```bash
+source $PREFIX/miniconda/bin/activate build-torch
+conda uninstall -c "nvidia/label/cuda-11.6.0" cuda-toolkit
+conda uninstall -c nvidia cudatoolkit=11.6
+conda uninstall -c nvidia cudnn
+conda uninstall -c "nvidia/label/cuda-11.6.0" libcusparse-dev
+conda uninstall -c "nvidia/label/cuda-11.6.0" libcusolver-dev
+#cupti not installed in local nvhpc 
+conda install nvidia/label/cuda-11.6.0::cuda-cupti
+```
+
+# Test
+```bash
+srun --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:1 --account=[CODE] --pty /usr/bin/bash --login
+source $PREFIX/miniconda/bin/activate build-torch
+module load openmpi/4.1.5-cuda-11.6
+module load nvidia/nvhpc/22.11 nvidia/cudnn/8.6.0-cuda-11.6 nvidia/tensorrt/8.4.3.1-u2
+python
+Python 3.10.13 (main, Sep 11 2023, 13:44:35) [GCC 11.2.0] on linux
+Type "help", "copyright", "credits" or "license" for more information.
+>>> import torch
+>>> torch.cuda.is_available()
+True
+>>> torch.distributed.is_mpi_available()
+True
+>>> exit()
+```
+If both don't return True the install has gone wrong in the setup.py stage
+

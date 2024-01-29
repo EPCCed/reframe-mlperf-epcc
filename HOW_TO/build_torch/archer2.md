@@ -27,45 +27,30 @@ pip install -r requirements.txt
 conda install mkl mkl-include
 ```
 
-# Define *build.slurm*
-
-This could be done with an interactive node
-
+# Build Pytorch
 ```bash
-#!/bin/bash (build.slurm)
-
-#SBATCH --job-name=build-torch
-#SBATCH --time=02:00:00
-#SBATCH --nodes=1
-#SBATCH --partition=standard
-#SBATCH --qos=standard
-#SBATCH --tasks-per-node=1
-#SBATCH --cpus-per-task=4
-#SBATCH --account=[Budget Code]
-
-#change to your prefix
-eval "$(/work/ta127/ta127/chrisrae/miniconda3/bin/conda shell.bash hook)"
-conda activate mlperf-torch
-
-export SRUN_CPUS_PER_TASK=${SLURM_CPUS_PER_TASK}
-export OMP_NUM_THREADS=1
-
+srun --nodes=1 --time=01:30:00 --partition=standard --qos=standard --account=[CODE] --pty /usr/bin/bash --login
+source $PREFIX/miniconda/bin/activate mlperf-torch
 module load PrgEnv-gnu
-
-cd /work/ta127/ta127/chrisrae/pytorch
-
+cd /path/to/pytorch
 export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"}
 export USE_CUDA=0
 export USE_ROCM=0
 export USE_DISTRIBUTED=1
 export BUILD_CAFFE2=0
 export BUILD_TEST=0
-
 python setup.py develop
 ```
 
-# launch slurm job
+# Build TorchVision
 ```bash
-sbatch build.slurm
+git clone --single-branch --branch release/0.15 https://github.com/pytorch/vision.git
+conda install libpng libjpeg-turbo
+srun --exclusive --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:1 --account=[CODE] --pty /usr/bin/bash --login
+source $PREFIX/miniconda/bin/activate mlperf-torch
+module unload cmake
+module swap gcc gcc/10.2.0
+module load openmpi/4.1.5-cuda-11.6
+cd vision
+python setup.py develop
 ```
-                                                    

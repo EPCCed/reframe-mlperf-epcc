@@ -645,3 +645,33 @@ def get_10x_lr_params(model):
         for k in b[j].parameters():
             if k.requires_grad:
                 yield k
+
+if __name__ == "__main__":
+    torch.cuda.memory._record_memory_history()
+    model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, process_group=None,).to("cuda")
+    opt = torch.optim.SGD(model.parameters(), 0.0001)
+    x, y = torch.randn(1, 16, 768, 1152).to("cuda"), torch.randn(1, 768, 1152).to("cuda")
+    w = torch.ones(3).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).to("cuda")
+    print(torch.cuda.memory_summary())
+    for _ in range(10):
+        logits = model(x)
+        torch.cuda.synchronize()
+        #print(torch.cuda.memory_summary())
+        # CELoss
+        def loss_fn(logits, target, weights):
+            target = target.unsqueeze(1)
+            ls_logits = F.log_softmax(logits, dim=1)
+            losses = weights*target*ls_logits
+            return torch.mean(losses)
+        loss = loss_fn(logits, y, w)
+        print(loss)
+        loss.backward()
+        torch.cuda.synchronize()
+        #print(torch.cuda.memory_summary())
+        opt.step()
+        opt.zero_grad()
+        torch.cuda.synchronize()
+    torch.cuda.memory._dump_snapshot("deepcam_snapshot.pickle")
+    
+
+

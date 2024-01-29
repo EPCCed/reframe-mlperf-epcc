@@ -2,8 +2,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from modelzoo.common.pytorch.PyTorchBaseModel import PyTorchBaseModel
-
+class BatchNorm2d(nn.Module):
+    def __init__(self, *args):
+        super().__init__()
+        pass
+    def forward(self, x):
+        return x
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -11,20 +15,20 @@ class Bottleneck(nn.Module):
     def __init__(self, in_planes, planes, stride=1):
         super(Bottleneck, self).__init__()
         self.conv1 = nn.Conv2d(in_planes, planes, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(planes)
+        self.bn1 = BatchNorm2d(planes)
         self.conv2 = nn.Conv2d(planes, planes, kernel_size=3,
                                stride=stride, padding=1, bias=False)
-        self.bn2 = nn.BatchNorm2d(planes)
+        self.bn2 = BatchNorm2d(planes)
         self.conv3 = nn.Conv2d(planes, self.expansion *
                                planes, kernel_size=1, bias=False)
-        self.bn3 = nn.BatchNorm2d(self.expansion*planes)
+        self.bn3 = BatchNorm2d(self.expansion*planes)
 
         self.shortcut = nn.Sequential()
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
                 nn.Conv2d(in_planes, self.expansion*planes,
                           kernel_size=1, stride=stride, bias=False),
-                nn.BatchNorm2d(self.expansion*planes)
+                BatchNorm2d(self.expansion*planes)
             )
 
     def forward(self, x):
@@ -43,7 +47,7 @@ class ResNet50(nn.Module):
         num_blocks = [3, 4, 6, 3]
         self.conv1 = nn.Conv2d(3, 64, kernel_size=3,
                                stride=1, padding=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
+        self.bn1 = BatchNorm2d(64)
         self.layer1 = self._make_layer(Bottleneck, 64, num_blocks[0], 1)
         self.layer2 = self._make_layer(Bottleneck, 128, num_blocks[1], 2)
         self.layer3 = self._make_layer(Bottleneck, 256, num_blocks[2], 2)
@@ -70,11 +74,11 @@ class ResNet50(nn.Module):
         out = self.linear(out)
         return out
 
-class ResNet50Model(PyTorchBaseModel):
-    def __init__(self, params, device=None):
+class ResNet50Model(nn.Module):
+    def __init__(self):
+        super().__init__()
         self.model = ResNet50()
         self.criterion = nn.CrossEntropyLoss()
-        super().__init__(params=params, model=self.model, device=device)
     
     def __call__(self, data):
         x, y = data

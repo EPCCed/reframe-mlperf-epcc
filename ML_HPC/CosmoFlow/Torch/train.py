@@ -58,10 +58,10 @@ def get_comm_time(prof: torch.profiler.profile):
 @click.option("--device", "-d", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
 def main(device, config):
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
-        gc["device"] = device.lower()
     if config:
         gc.update_config(config)
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
         
     torch.backends.cudnn.benchmark = True
     print(gc.device)
@@ -80,8 +80,9 @@ def main(device, config):
     gc.log_seed(1)
 
     if gc.device == "cuda":
-        local_rank = os.environ["LOCAL_RANK"]
-        torch.cuda.set_device("cuda:" + local_rank)
+        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+        torch.cuda.set_device("cuda:" + str(local_rank))
     
     train_data = get_train_dataloader()
     val_data = get_val_dataloader()

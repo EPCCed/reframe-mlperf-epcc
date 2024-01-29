@@ -1,0 +1,44 @@
+apiVersion: graphcore.ai/v1alpha1
+kind: IPUJob
+metadata:
+  generateName: bert-training-multi-ipu-
+spec:
+  jobInstances: 1
+  ipusPerJobInstance: "2"
+  workers:
+    template:
+      spec:
+        containers:
+        - name: resnet-training-multi-ipu
+          image: graphcore/pytorch:3.3.0
+          command: [/bin/bash, -c, --]
+          args:
+            - |
+              cd ;
+              mkdir build;
+              cd build ;
+              git clone https://github.com/graphcore/examples.git;
+              cd examples/nlp/bert/pytorch;
+              apt update ;
+              apt upgrade -y;
+              DEBIAN_FRONTEND=noninteractive TZ='Europe/London' apt install $(< required_apt_packages.txt) -y ;
+              pip3 install -r requirements.txt ;
+              python3 run_pretraining.py --dataset generated --config pretrain_base_128_pod4 --training-steps 1
+          resources:
+            limits:
+              cpu: 32
+              memory: 200Gi
+          securityContext:
+            capabilities:
+              add:
+              - IPC_LOCK
+          volumeMounts:
+          - mountPath: /dev/shm
+            name: devshm
+        restartPolicy: Never
+        hostIPC: true
+        volumes:
+        - emptyDir:
+            medium: Memory
+            sizeLimit: 10Gi
+          name: devshm
