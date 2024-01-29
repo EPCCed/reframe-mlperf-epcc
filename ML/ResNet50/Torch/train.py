@@ -109,9 +109,13 @@ def main(device, config):
     gc.world_size
 
     if gc.device == "cuda":
-        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-        torch.cuda.set_device("cuda:" + str(local_rank))
+        if dist.is_torchelastic_launched():
+            torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
+        else:
+            # slurm
+            taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+            local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+            torch.cuda.set_device("cuda:" + str(local_rank))
 
     gc.log_resnet()
     gc.start_init()
@@ -216,7 +220,7 @@ def main(device, config):
         total_time = torch.tensor(total_time)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
-        if gc.rank == 0:
+        if gc.rank == 0 and gc["training"]["benchamrk"]:
             #print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
 
@@ -233,7 +237,7 @@ def main(device, config):
                 loss = valid_step(x, y, model, loss_fn, val_metric)
             val_accuracy = val_metric.compute()
             dist.all_reduce(val_accuracy)
-            if gc.rank == 0:
+            if gc.rank == 0 and gc["training"]["benchmark"]:
                 print(f"Train Accuracy at Epoch {E}: {val_accuracy/gc.world_size}")
                 print(f"Validation Loss at Epoch {E}: {loss}")
         gc.stop_eval(metadata={"epoch_num": E})
