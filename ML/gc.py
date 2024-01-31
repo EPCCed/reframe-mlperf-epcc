@@ -45,16 +45,13 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     def init_dist():
         if dist.is_mpi_available() and not dist.is_torchelastic_launched():
             backend = "mpi"
-        elif gc.device == "cuda":
+        elif self.device == "cuda":
             backend = "nccl"
         else:
             backend = "gloo"
         dist.init_process_group(backend)
 
-        gc.rank
-        gc.world_size
-
-        if gc.device == "cuda":
+        if self.device == "cuda":
             if dist.is_torchelastic_launched():
                 torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
             else:
