@@ -82,7 +82,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @property
     def locaL_world_size(self):
-        def local_rank(self):
         if "local_world_size" not in self.keys():
             if dist.is_torchelastic_launched():
                 self["local_world_size"] = int(os.environ['LOCAL_WORLD_RANK'])
