@@ -75,7 +75,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     def local_world_size(self):
         if "local_world_size" not in self.keys():
             if dist.is_torchelastic_launched():
-                self["local_world_size"] = int(os.environ['LOCAL_WORLD_RANK'])
+                self["local_world_size"] = int(os.environ['LOCAL_WORLD_SIZE'])
             else:
                 # slurm
                 taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
