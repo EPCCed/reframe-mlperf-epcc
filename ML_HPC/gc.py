@@ -43,8 +43,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                     self["device"] = "cuda"
             self.times = []
 
-    @staticmethod
-    def init_dist():
+    def init_dist(self):
         if dist.is_mpi_available() and not dist.is_torchelastic_launched():
             backend = "mpi"
         elif self.device == "cuda":
