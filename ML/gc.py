@@ -49,15 +49,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         else:
             backend = "gloo"
         dist.init_process_group(backend)
-
-        if self.device == "cuda":
-            if dist.is_torchelastic_launched():
-                torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
-            else:
-                # slurm
-                taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-                local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-                torch.cuda.set_device("cuda:" + str(local_rank))
             
     @property
     def rank(self):
@@ -70,7 +61,30 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         if "world_size" not in self.keys():
             self["world_size"] = dist.get_world_size()
         return self["world_size"]
+
+    @property
+    def local_rank(self):
+        if "local_rank" not in self.keys():
+            if dist.is_torchelastic_launched():
+                self["local_rank"] = int(os.environ['LOCAL_RANK'])
+            else:
+                # slurm
+                taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+                self["local_rank"] = int(os.environ["SLURM_PROCID"])%taskspernode
+        return self["local_rank"]
     
+    @property
+    def locaL_world_size(self):
+        def local_rank(self):
+        if "local_world_size" not in self.keys():
+            if dist.is_torchelastic_launched():
+                self["local_world_size"] = int(os.environ['LOCAL_WORLD_RANK'])
+            else:
+                # slurm
+                taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+                self["local_world_size"] = taskspernode
+        return self["local_world_size"]
+            
     @property
     def device(self):
         return self["device"].lower()

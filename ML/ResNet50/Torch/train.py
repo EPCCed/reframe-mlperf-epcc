@@ -96,6 +96,8 @@ def main(device, config):
     
     torch.manual_seed(1)
     gc.init_dist()
+    if self.device == "cuda":
+        torch.cuda.set_device("cuda:" + str(gc.local_rank))
 
     gc.log_resnet()
     gc.start_init()
