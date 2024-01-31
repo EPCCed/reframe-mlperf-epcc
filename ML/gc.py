@@ -59,8 +59,8 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     def update_config(self, config_path):
         with open(config_path, "r") as stream:
-            self.__dict__.clear()
-            self.__dict__.update(yaml.safe_load(stream))
+            self.clear()
+            self.update(yaml.safe_load(stream))
             if self["device"].lower() == 'gpu':
                 self["device"] = "cuda"
     
@@ -152,13 +152,20 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         self.mllogger.event(key=log_constants.OPT_LR_DECAY_STEPS, value=self["lr_schedule"]["decay_steps"])
         self.mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
         self.mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["opt"]["weight_decay"])
-        self.log_cluster_info()
+        #self.log_cluster_info()
 
     @_run_on_0
     def log_cluster_info(self):
+        if dist.is_torchelastic_launched():
+            accels_per_node = int(os.environ["LOCAL_WORLD_SIZE"])
+            num_nodes = dist.get_world_size()//accels_per_node
+            accels_per_node = accels_per_node if torch.cuda.is_available() else 0
+        else:
+            num_nodes = int(os.environ["SLURM_NNODES"])
+            accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
         self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
-        self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
+        self.mllogger.event(key="number_of_nodes", value=num_nodes)
+        #accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
         self.mllogger.event(key="accelerators_per_node", value=accels_per_node)
 
     @_run_on_0

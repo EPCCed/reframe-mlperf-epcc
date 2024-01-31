@@ -1,9 +1,9 @@
 import os
 from pathlib import Path
 import sys
-
-path_root = Path(__file__).parents[3]
-sys.path.append(str(path_root))
+#print(Path(__file__).parents[1])
+#path_root = Path(__file__).parents[3]
+sys.path.append("/mnt/ceph_rbd/chris-ml-intern/")
 import click
 import time
 
@@ -14,9 +14,8 @@ from tqdm import tqdm
 
 
 from ML.gc import GlobalContext
-gc = GlobalContext(
-    "/work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/configs/cirrusbenchmark_config.yaml"
-)
+gc = GlobalContext()
+print("test")
 import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
@@ -97,12 +96,14 @@ def main(device, config):
         gc.update_config(config)
     
     torch.manual_seed(1)
-    if dist.is_mpi_available():
+    
+    if dist.is_mpi_available() and not dist.is_torchelastic_launched():
         backend = "mpi"
     elif gc.device == "cuda":
         backend = "nccl"
     else:
         backend = "gloo"
+    
     dist.init_process_group(backend)
     
     gc.rank
@@ -114,7 +115,7 @@ def main(device, config):
         else:
             # slurm
             taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-            local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+            local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])%taskspernode
             torch.cuda.set_device("cuda:" + str(local_rank))
 
     gc.log_resnet()
@@ -130,8 +131,10 @@ def main(device, config):
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
-        
-        taskspernode = gc.world_size // int(os.environ["SLURM_NNODES"])
+        if dist.is_torchelastic_launched():
+             taskspernode = int(os.environ["LOCAL_WORLD_SIZE"])
+        else:
+             taskspernode = gc.world_size // int(os.environ["SLURM_NNODES"])
         node = gc.rank // taskspernode
         zeros_ranks = list([i for i in range(gc.world_size) if i % taskspernode == 0])
         local_ranks = list([node*taskspernode + i for i in range(taskspernode)])
@@ -217,10 +220,10 @@ def main(device, config):
         #train_accuracy = train_metric.compute()
         #dist.reduce(train_accuracy, 0)
         total_time = time.time()-start
-        total_time = torch.tensor(total_time)
+        total_time = torch.tensor(total_time).to(gc.device)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
-        if gc.rank == 0 and gc["training"]["benchamrk"]:
+        if gc.rank == 0 and gc["training"]["benchmark"]:
             #print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
 
@@ -235,7 +238,7 @@ def main(device, config):
         if E % 4 == 0:
             for x, y in val_data:
                 loss = valid_step(x, y, model, loss_fn, val_metric)
-            val_accuracy = val_metric.compute()
+            val_accuracy = val_metric.compute().to(gc.device)
             dist.all_reduce(val_accuracy)
             if gc.rank == 0 and gc["training"]["benchmark"]:
                 print(f"Train Accuracy at Epoch {E}: {val_accuracy/gc.world_size}")

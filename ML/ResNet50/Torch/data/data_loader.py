@@ -59,7 +59,7 @@ def get_train_dataloader():
                       sampler=sampler,
                       batch_size=local_bs, 
                       drop_last=gc["data"]["drop_last_batch"],
-                      num_workers=4,
+                      num_workers=1,
                       prefetch_factor=gc["data"]["prefetch"],
                       pin_memory = True if gc.device == "cuda" else False 
                       )
