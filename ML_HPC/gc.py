@@ -52,15 +52,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             backend = "gloo"
         dist.init_process_group(backend)
 
-        if self.device == "cuda":
-            if dist.is_torchelastic_launched():
-                torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
-            else:
-                # slurm
-                taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-                local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-                torch.cuda.set_device("cuda:" + str(local_rank))
-    
     @property
     def rank(self):
         return dist.get_rank()
