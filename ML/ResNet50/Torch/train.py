@@ -1,9 +1,9 @@
 import os
 from pathlib import Path
 import sys
-#print(Path(__file__).parents[1])
-#path_root = Path(__file__).parents[3]
-sys.path.append("/mnt/ceph_rbd/chris-ml-intern/")
+
+path_root = Path(__file__).parents[3]
+sys.path.append(str(path_root))
 import click
 import time
 
@@ -15,7 +15,6 @@ from tqdm import tqdm
 
 from ML.gc import GlobalContext
 gc = GlobalContext()
-print("test")
 import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
@@ -96,27 +95,7 @@ def main(device, config):
         gc.update_config(config)
     
     torch.manual_seed(1)
-    
-    if dist.is_mpi_available() and not dist.is_torchelastic_launched():
-        backend = "mpi"
-    elif gc.device == "cuda":
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    
-    dist.init_process_group(backend)
-    
-    gc.rank
-    gc.world_size
-
-    if gc.device == "cuda":
-        if dist.is_torchelastic_launched():
-            torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
-        else:
-            # slurm
-            taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-            local_rank = int(os.environ["OMPI_COMM_WORLD_LOCAL_RANK"])%taskspernode
-            torch.cuda.set_device("cuda:" + str(local_rank))
+    gc.init_dist()
 
     gc.log_resnet()
     gc.start_init()
@@ -131,6 +110,7 @@ def main(device, config):
     model = ResNet50(num_classes=1000).to(gc.device)
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
+        
         if dist.is_torchelastic_launched():
              taskspernode = int(os.environ["LOCAL_WORLD_SIZE"])
         else:

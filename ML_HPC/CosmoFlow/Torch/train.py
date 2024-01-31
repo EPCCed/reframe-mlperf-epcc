@@ -67,26 +67,13 @@ def main(device, config):
     print(gc.device)
     
     torch.manual_seed(1)
-    if dist.is_mpi_available():
-        backend = "mpi"
-    elif gc.device == "cuda":
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    dist.init_process_group(backend)
+    
+    gc.init_dist()
 
     gc.log_cosmoflow()
     gc.start_init()
     gc.log_seed(1)
 
-    if gc.device == "cuda":
-        if dist.is_torchelastic_launched():
-            torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
-        else:
-            # slurm
-            taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-            local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-            torch.cuda.set_device("cuda:" + str(local_rank))
     
     train_data = get_train_dataloader()
     val_data = get_val_dataloader()

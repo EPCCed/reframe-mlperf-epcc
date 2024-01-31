@@ -40,6 +40,28 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                 self.update(yaml.safe_load(stream))
                 if self["device"].lower() == 'gpu':
                     self["device"] = "cuda"
+    
+    @staticmethod
+    def init_dist():
+        if dist.is_mpi_available() and not dist.is_torchelastic_launched():
+            backend = "mpi"
+        elif gc.device == "cuda":
+            backend = "nccl"
+        else:
+            backend = "gloo"
+        dist.init_process_group(backend)
+
+        gc.rank
+        gc.world_size
+
+        if gc.device == "cuda":
+            if dist.is_torchelastic_launched():
+                torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
+            else:
+                # slurm
+                taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+                local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+                torch.cuda.set_device("cuda:" + str(local_rank))
             
     @property
     def rank(self):
@@ -152,7 +174,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         self.mllogger.event(key=log_constants.OPT_LR_DECAY_STEPS, value=self["lr_schedule"]["decay_steps"])
         self.mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
         self.mllogger.event(key=log_constants.OPT_WEIGHT_DECAY, value=self["opt"]["weight_decay"])
-        #self.log_cluster_info()
+        self.log_cluster_info()
 
     @_run_on_0
     def log_cluster_info(self):

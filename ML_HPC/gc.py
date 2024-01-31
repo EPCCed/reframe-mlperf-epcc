@@ -43,6 +43,28 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                     self["device"] = "cuda"
             self.times = []
 
+    @staticmethod
+    def init_dist():
+        if dist.is_mpi_available() and not dist.is_torchelastic_launched():
+            backend = "mpi"
+        elif gc.device == "cuda":
+            backend = "nccl"
+        else:
+            backend = "gloo"
+        dist.init_process_group(backend)
+
+        gc.rank
+        gc.world_size
+
+        if gc.device == "cuda":
+            if dist.is_torchelastic_launched():
+                torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
+            else:
+                # slurm
+                taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
+                local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
+                torch.cuda.set_device("cuda:" + str(local_rank))
+    
     @property
     def rank(self):
         return dist.get_rank()
@@ -109,9 +131,16 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @_run_on_0
     def log_cluster_info(self):
+        if dist.is_torchelastic_launched():
+            accels_per_node = int(os.environ["LOCAL_WORLD_SIZE"])
+            num_nodes = dist.get_world_size()//accels_per_node
+            accels_per_node = accels_per_node if torch.cuda.is_available() else 0
+        else:
+            num_nodes = int(os.environ["SLURM_NNODES"])
+            accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
         self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
-        self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
+        self.mllogger.event(key="number_of_nodes", value=num_nodes)
+        #accels_per_node = dist.get_world_size()//int(os.environ["SLURM_NNODES"]) if torch.cuda.is_available() else 0
         self.mllogger.event(key="accelerators_per_node", value=accels_per_node)
 
     @_run_on_0

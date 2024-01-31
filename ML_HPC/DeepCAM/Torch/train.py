@@ -14,7 +14,7 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/z043/z043/crae/chris-ml-intern/ML_HPC/DeepCAM/Torch/configs/cirrusbenchmark_config.yaml")
+gc = GlobalContext()
 import ML_HPC.DeepCAM.Torch.data.data_loader as dl
 from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
@@ -68,25 +68,7 @@ def main(device, config):
 
 
     torch.manual_seed(333)
-    if dist.is_mpi_available():
-        backend = "mpi"
-    elif gc.device == "cuda":
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    dist.init_process_group(backend)
-
-    gc.log_deepcam()
-    gc.log_seed(333)
-
-    if gc.device == "cuda":
-        if dist.is_torchelastic_launched():
-            torch.cuda.set_device(f"cuda:{int(os.environ['LOCAL_RANK'])}")
-        else:
-            # slurm
-            taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-            local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-            torch.cuda.set_device("cuda:" + str(local_rank))
+    gc.init_dist()
     
     gc.start_init()
     
