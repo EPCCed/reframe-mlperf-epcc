@@ -93,8 +93,8 @@ def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.
 @click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
 @click.option("--global-batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
 @click.option("--local-batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
-@click.option("--t_subset_size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
-@click.option("--v_subset_size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
+@click.option("--t-subset-size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
+@click.option("--v-subset-size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
 def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)

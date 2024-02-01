@@ -68,7 +68,7 @@ class ResNet50(nn.Module):
         out = F.adaptive_avg_pool2d(out, (1, 1))
         out = out.view(out.size(0), -1)
         out = self.linear(out)
-        return (out, self.criterion(out, target))
+        return (out, F.cross_entropy(out, target, reduce=True))
 
 
 if __name__ == "__main__":
