@@ -14,7 +14,7 @@ import torch.distributed as dist
 import torch.nn as nn
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/z043/z043/crae/chris-ml-intern/ML_HPC/DeepCAM/Torch/configs/cirrusbenchmark_config.yaml")
+gc = GlobalContext()
 import ML_HPC.DeepCAM.Torch.data.data_loader as dl
 from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
@@ -60,29 +60,23 @@ def get_comm_time(prof: torch.profiler.profile):
 @click.command()
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
-def main(device, config):
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
-        gc["device"] = device.lower()
+@click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
+@click.option("--global-batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
+def main(device, config, data_path, gbs):
     if config:
         gc.update_config(config)
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+    if data_path:
+        gc["data"]["data_dir"] = data_path
+    if gbs:
+        gc["data"]["global_batch_size"] = gbs
 
 
     torch.manual_seed(333)
-    if dist.is_mpi_available():
-        backend = "mpi"
-    elif gc.device == "cuda":
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    dist.init_process_group(backend)
-
-    gc.log_deepcam()
-    gc.log_seed(333)
-
+    gc.init_dist()
     if gc.device == "cuda":
-        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-        torch.cuda.set_device("cuda:" + str(local_rank))
+        torch.cuda.set_device("cuda:" + str(gc.local_rank))
     
     gc.start_init()
     

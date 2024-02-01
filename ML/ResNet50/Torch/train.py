@@ -1,8 +1,10 @@
+from email.policy import default
 import os
 from pathlib import Path
 import sys
 
-path_root = Path(__file__).parents[3]
+print(os.getcwd())
+path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
 import click
 import time
@@ -14,9 +16,7 @@ from tqdm import tqdm
 
 
 from ML.gc import GlobalContext
-gc = GlobalContext(
-    "/work/z043/z043/crae/chris-ml-intern/ML/ResNet50/Torch/configs/cirrusbenchmark_config.yaml"
-)
+gc = GlobalContext()
 import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
@@ -89,29 +89,32 @@ def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.
 
 @click.command()
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
-@click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
-def main(device, config):
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
-        gc["device"] = device.lower()
+@click.option("--config", "-c", default=os.path.join(os.getcwd(), "config.yaml"), show_default=True, type=str, help="Path to config.yaml. If not provided will default to config.yaml in the cwd")
+@click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
+@click.option("--global-batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
+@click.option("--local-batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
+@click.option("--t-subset-size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
+@click.option("--v-subset-size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
+def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+    if data_dir:
+        gc["data"]["data_dir"] = data_dir
+    if global_batchsize:
+        gc["data"]["global_batch_size"] = global_batchsize
+    if local_batchsize:
+        gc["data"]["local_batch_size"]= local_batchsize
+    if t_subset_size:
+        gc["data"]["train_subset"] = t_subset_size
+    if v_subset_size:
+        gc["data"]["val_subset"] = v_subset_size
     
     torch.manual_seed(1)
-    if dist.is_mpi_available():
-        backend = "mpi"
-    elif gc.device == "cuda":
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    dist.init_process_group(backend)
-    
-    gc.rank
-    gc.world_size
-
+    gc.init_dist()
     if gc.device == "cuda":
-        taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
-        local_rank = int(os.environ["SLURM_PROCID"])%taskspernode
-        torch.cuda.set_device("cuda:" + str(local_rank))
+        torch.cuda.set_device("cuda:" + str(gc.local_rank))
 
     gc.log_resnet()
     gc.start_init()
@@ -127,7 +130,10 @@ def main(device, config):
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
         
-        taskspernode = gc.world_size // int(os.environ["SLURM_NNODES"])
+        if dist.is_torchelastic_launched():
+             taskspernode = int(os.environ["LOCAL_WORLD_SIZE"])
+        else:
+             taskspernode = gc.world_size // int(os.environ["SLURM_NNODES"])
         node = gc.rank // taskspernode
         zeros_ranks = list([i for i in range(gc.world_size) if i % taskspernode == 0])
         local_ranks = list([node*taskspernode + i for i in range(taskspernode)])
@@ -182,7 +188,7 @@ def main(device, config):
 
     if gc["training"]["benchmark"] and gc.device == "cuda":
         gc.print_0("Started Warmup")
-        for i in range(5):
+        for i in range(1):
             for x, y in train_data:
                 x, y = x.to(gc.device), y.to(gc.device)
         gc.print_0("Ended Warmup")
@@ -213,10 +219,10 @@ def main(device, config):
         #train_accuracy = train_metric.compute()
         #dist.reduce(train_accuracy, 0)
         total_time = time.time()-start
-        total_time = torch.tensor(total_time)
+        total_time = torch.tensor(total_time).to(gc.device)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
-        if gc.rank == 0:
+        if gc.rank == 0 and gc["training"]["benchmark"]:
             #print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
 
@@ -231,9 +237,9 @@ def main(device, config):
         if E % 4 == 0:
             for x, y in val_data:
                 loss = valid_step(x, y, model, loss_fn, val_metric)
-            val_accuracy = val_metric.compute()
+            val_accuracy = val_metric.compute().to(gc.device)
             dist.all_reduce(val_accuracy)
-            if gc.rank == 0:
+            if gc.rank == 0 and gc["training"]["benchmark"]:
                 print(f"Train Accuracy at Epoch {E}: {val_accuracy/gc.world_size}")
                 print(f"Validation Loss at Epoch {E}: {loss}")
         gc.stop_eval(metadata={"epoch_num": E})

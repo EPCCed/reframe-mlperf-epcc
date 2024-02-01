@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 import sys
-path_root = Path(__file__).parents[3]
+path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
 import csv
 import click
@@ -13,9 +13,7 @@ from torchmetrics.classification import Accuracy
 from tqdm import tqdm
 
 from ML.gc import GlobalContext
-gc = GlobalContext(
-    "/work/ta127/ta127/chrisrae/chris-ml-intern/ML/ResNet50/Torch/config.yaml"
-)
+gc = GlobalContext()
 import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
@@ -40,10 +38,11 @@ def main(config):
     options.randomSeed(1)
     torch.manual_seed(1)
 
-    train_data = dl.get_train_dataloader(options)
-    val_data = dl.get_val_dataloader(val_options)
+    train_data = dl.get_dummy_dataloader(options, 4096*4)
+    val_data = dl.get_dummy_dataloader(val_options)
 
     net = ResNet50(num_classes=1000)
+    net.train()
 
     if gc["opt"]["name"].upper() == "SGD":
         opt = torch.optim.SGD(
@@ -63,8 +62,6 @@ def main(config):
 
     eval_model = poptorch.inferenceModel(net, options=val_options)
 
-    
-
     scheduler = torch.optim.lr_scheduler.PolynomialLR(
         opt, total_iters=gc["data"]["n_epochs"], power=gc["lr_schedule"]["poly_power"]
     )
@@ -78,7 +75,7 @@ def main(config):
     while True:
         start = time.time()
         for x, y in train_data:
-            out, loss = model(x, y)
+            _, loss = model(x, y)
         
         train_accuracy = train_metric(out, y)
         total_time = time.time()-start
