@@ -1,8 +1,10 @@
+from email.policy import default
 import os
 from pathlib import Path
 import sys
 
-path_root = Path(__file__).parents[3]
+print(os.getcwd())
+path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
 import click
 import time
@@ -87,12 +89,27 @@ def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.
 
 @click.command()
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
-@click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
-def main(device, config):
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
-        gc["device"] = device.lower()
+@click.option("--config", "-c", default=os.path.join(os.getcwd(), "config.yaml"), show_default=True, type=str, help="Path to config.yaml. If not provided will default to config.yaml in the cwd")
+@click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
+@click.option("--global-batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
+@click.option("--local-batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
+@click.option("--t_subset_size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
+@click.option("--v_subset_size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
+def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+    if data_dir:
+        gc["data"]["data_dir"] = data_dir
+    if global_batchsize:
+        gc["data"]["global_batch_size"] = global_batchsize
+    if local_batchsize:
+        gc["data"]["local_batch_size"]= local_batchsize
+    if t_subset_size:
+        gc["data"]["train_subset"] = t_subset_size
+    if v_subset_size:
+        gc["data"]["val_subset"] = v_subset_size
     
     torch.manual_seed(1)
     gc.init_dist()
@@ -171,7 +188,7 @@ def main(device, config):
 
     if gc["training"]["benchmark"] and gc.device == "cuda":
         gc.print_0("Started Warmup")
-        for i in range(5):
+        for i in range(1):
             for x, y in train_data:
                 x, y = x.to(gc.device), y.to(gc.device)
         gc.print_0("Ended Warmup")

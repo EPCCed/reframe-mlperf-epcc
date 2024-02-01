@@ -60,11 +60,17 @@ def get_comm_time(prof: torch.profiler.profile):
 @click.command()
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
-def main(device, config):
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
-        gc["device"] = device.lower()
+@click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
+@click.option("--global-batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
+def main(device, config, data_path, gbs):
     if config:
         gc.update_config(config)
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+    if data_path:
+        gc["data"]["data_dir"] = data_path
+    if gbs:
+        gc["data"]["global_batch_size"] = gbs
 
 
     torch.manual_seed(333)
