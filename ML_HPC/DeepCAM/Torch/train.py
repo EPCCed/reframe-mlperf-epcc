@@ -138,11 +138,13 @@ def main(device, config, data_path, gbs):
         model.train()
         start = time.time()
         total_io_time = 0
+        power_draw = []
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
             for idx, (x, y, _) in enumerate(train_data):
                 x, y = x.to(gc.device), y.to(gc.device)
-                total_io_time += time.time_ns() - start_io                
+                total_io_time += time.time_ns() - start_io    
+                power_draw.append(get_power())            
                 if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
@@ -170,12 +172,16 @@ def main(device, config, data_path, gbs):
         total_io_time *= 1e-9
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
+        avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+        dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0:
             print(f"Processing Speed: {(train_data_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
             print(f"Communication Time: {get_comm_time(prof)}")
+            if gc.device == "cuda":
+                print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
             print(f"Total IO Time: {total_io_time}")
 
 
