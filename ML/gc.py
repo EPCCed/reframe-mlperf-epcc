@@ -108,15 +108,19 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
 
         def _call_log_timer():
             self._mpi_total_time += time.time_ns() - self._mpi_iter_start_time
-        
-        def _dev(fut):
-            _call_log_timer()
-            return fut.value()[0] /self.world_size
 
-        def _time_mpi(state, bucket):
+        def _time_mpi(pg, bucket):
+            group_to_use = pg if pg is not None else dist.group.WORLD
+            
+            def _log(fut):
+                out_tensor = bucket.buffer()
+                out_tensor.copy_(fut.value[0])
+                _call_log_timer()
+                return out_tensor
+        
             _call_start_timer()
-            fut = dist.all_reduce(bucket.buffer(), async_op=True).get_future()
-            return fut.then(_dev)
+            fut = dist.all_reduce(bucket.buffer().div_(group_to_use.size()), group=group_to_use, async_op=True).get_future()
+            return fut.then(_log)
         return _time_mpi
     
     @property

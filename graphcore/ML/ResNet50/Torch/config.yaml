@@ -2,7 +2,7 @@ device: cpu
 
 data:
     data_dir: /work/ta127/shared/imagenet-1k/data
-    global_batch_size: 64
+    global_batch_size: 1
     local_batch_size: 0 # change to 0 to use global_batch_size
     train_subset: 0
     val_subset: 0
