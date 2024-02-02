@@ -35,6 +35,7 @@ def main(config):
     options = poptorch.Options()
     val_options = poptorch.Options()
     options.replicationFactor(gc["training"]["num_ipus"])
+    #options.deviceIterations(32)
     options.randomSeed(1)
     torch.manual_seed(1)
 
@@ -75,7 +76,7 @@ def main(config):
     while True:
         start = time.time()
         for x, y in train_data:
-            _, loss = model(x, y)
+            loss = model(x, y)
         
         train_accuracy = train_metric(out, y)
         total_time = time.time()-start

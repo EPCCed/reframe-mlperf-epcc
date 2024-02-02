@@ -205,7 +205,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @contextmanager
     def profiler(self, name: str):
-        if self.rank != 0 or not self["training"]["benchmark"]:
+        if self.rank != -1 or not self["training"]["benchmark"]:
             yield None
         else:
             if self.device == "cpu":

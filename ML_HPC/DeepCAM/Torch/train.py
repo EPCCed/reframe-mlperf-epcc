@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import warnings
 warnings.filterwarnings("ignore")
 import click
+from packaging import version
 
 import torch
 import torch.distributed as dist
@@ -20,6 +21,12 @@ from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
 from ML_HPC.DeepCAM.Torch.optimizer.lamb import Lamb
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
+
+if version.parse(torch.__version__) < version.parse("2.1.0"):
+    get_power = lambda : 0
+    print("Torch Version Too Low for GPU Power Metrics")
+else:
+    get_power = torch.cuda.power_draw
 
 
 class CELoss(nn.Module):
@@ -135,8 +142,7 @@ def main(device, config, data_path, gbs):
             start_io = time.time_ns()
             for idx, (x, y, _) in enumerate(train_data):
                 x, y = x.to(gc.device), y.to(gc.device)
-                total_io_time += time.time_ns() - start_io
-                
+                total_io_time += time.time_ns() - start_io                
                 if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
