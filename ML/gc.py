@@ -100,11 +100,14 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         # probably wont work due to asynchronous property of futures
         if not hasattr(self, "_mpi_total_time"):
             self._mpi_total_time = 0
+            self._total_call = 0
         if not hasattr(self, "_mpi_iter_start_time"):
             self._mpi_iter_start_time = 0
+        
 
         def _call_start_timer():
             self._mpi_iter_start_time = time.time_ns()
+            self._total_call += 1
 
         def _call_log_timer():
             self._mpi_total_time += time.time_ns() - self._mpi_iter_start_time
@@ -114,7 +117,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             
             def _log(fut):
                 out_tensor = bucket.buffer()
-                out_tensor.copy_(fut.value[0])
+                out_tensor.copy_(fut.value()[0])
                 _call_log_timer()
                 return out_tensor
         
