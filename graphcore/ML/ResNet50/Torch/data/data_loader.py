@@ -24,8 +24,7 @@ def get_dummy_dataloader(options, length=1024, shape=(3,224,224)):
 
         def __getitem__(self, index):
             img = torch.randint(0, 255, self.shape, dtype=torch.float32) / 255.0
-            label = torch.zeros(1000)
-            label[torch.randint(0, 999, (1,))] = 1
+            label = torch.randint(0, 999, (1,), dtype=torch.int32).squeeze()
             return img, label
     
     dataset = DummyData(length, shape)

@@ -8,6 +8,7 @@ from contextlib import contextmanager
 import warnings
 warnings.filterwarnings("ignore")
 import click
+from packaging import version
 
 import torch
 import torch.distributed as dist
@@ -20,6 +21,12 @@ from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
 from ML_HPC.DeepCAM.Torch.optimizer.lamb import Lamb
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
+
+if version.parse(torch.__version__) < version.parse("2.1.0"):
+    get_power = lambda : 0
+    print("Torch Version Too Low for GPU Power Metrics")
+else:
+    get_power = torch.cuda.power_draw
 
 
 class CELoss(nn.Module):
@@ -131,12 +138,13 @@ def main(device, config, data_path, gbs):
         model.train()
         start = time.time()
         total_io_time = 0
+        power_draw = []
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
             for idx, (x, y, _) in enumerate(train_data):
                 x, y = x.to(gc.device), y.to(gc.device)
-                total_io_time += time.time_ns() - start_io
-                
+                total_io_time += time.time_ns() - start_io    
+                power_draw.append(get_power())            
                 if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
@@ -164,12 +172,16 @@ def main(device, config, data_path, gbs):
         total_io_time *= 1e-9
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
+        avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+        dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0:
             print(f"Processing Speed: {(train_data_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
             print(f"Communication Time: {get_comm_time(prof)}")
+            if gc.device == "cuda":
+                print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
             print(f"Total IO Time: {total_io_time}")
 
 

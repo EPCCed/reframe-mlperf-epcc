@@ -2,6 +2,7 @@ from email.policy import default
 import os
 from pathlib import Path
 import sys
+from packaging import version
 
 print(os.getcwd())
 path_root = Path(os.getcwd()).parents[2]
@@ -21,6 +22,12 @@ import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
 
+
+if version.parse(torch.__version__) < version.parse("2.1.0"):
+    get_power = lambda : 0
+    print("Torch Version Too Low for GPU Power Metrics")
+else:
+    get_power = torch.cuda.power_draw
 
 def train_step(x, y, model, loss_fn, opt, metric_tracker, batch_idx):
     if (batch_idx+1)% gc["data"]["gradient_accumulation_freq"] != 0:
@@ -54,8 +61,9 @@ def valid_step(x, y, model, loss_fn, metric_tracker):
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
+    backend = "mpi:" if dist.get_backend() == "mpi" else "nccl:"
     for event in list(prof.key_averages()):
-        if "mpi:" in event.key:
+        if backend in event.key:
             total_time += event.cpu_time_total * 1e-6
             total_time += event.cuda_time_total * 1e-6
     return total_time
@@ -91,10 +99,10 @@ def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default=os.path.join(os.getcwd(), "config.yaml"), show_default=True, type=str, help="Path to config.yaml. If not provided will default to config.yaml in the cwd")
 @click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
-@click.option("--global-batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
-@click.option("--local-batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
-@click.option("--t-subset-size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
-@click.option("--v-subset-size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
+@click.option("--global_batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
+@click.option("--local_batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
+@click.option("--t_subset_size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
+@click.option("--v_subset_size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
 def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
@@ -123,7 +131,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     train_data = dl.get_train_dataloader()
     val_data = dl.get_val_dataloader()
     
-    if gc.rank == 0:  # change to -1 to turn off 0 to turn on
+    if gc.rank == -1:  # change to -1 to turn off 0 to turn on
         train_data = tqdm(train_data, unit="images", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"]) 
     
     model = ResNet50(num_classes=1000).to(gc.device)
@@ -138,7 +146,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         zeros_ranks = list([i for i in range(gc.world_size) if i % taskspernode == 0])
         local_ranks = list([node*taskspernode + i for i in range(taskspernode)])
         
-        print(gc.rank, node, zeros_ranks, local_ranks) 
+        #print(gc.rank, node, zeros_ranks, local_ranks) 
         #zeros_group = dist.new_group(zeros_ranks, backend="mpi")
         """
         local_groups = [] 
@@ -204,14 +212,15 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         start = time.time()
         gc.start_epoch(metadata={"epoch_num": E})
         total_io_time = 0
+        power_draw = []
         with gc.profiler(f"Epoch: {E}") as prof:
             start_io = time.time_ns()
             for i, data in enumerate(train_data):
                 x, y = data
                 x, y = x.to(gc.device), y.to(gc.device)
                 total_io_time += time.time_ns() - start_io
-
                 loss = train_step(x, y, model, loss_fn, opt, train_metric, i)
+                power_draw.append(get_power())
 
                 start_io = time.time_ns()
         total_io_time *= 1e-9
@@ -220,6 +229,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         #dist.reduce(train_accuracy, 0)
         total_time = time.time()-start
         total_time = torch.tensor(total_time).to(gc.device)
+        avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+        dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0 and gc["training"]["benchmark"]:
@@ -230,8 +241,10 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
             print(f"Processing Speed: {(dataset_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
             if gc["data"]["n_epochs"] == E:
-                print(f"Communication Time: {get_comm_time(prof)}")
+                print(f"Communication Time: {0}")  # get_comm_time(prof)}")
             print(f"Total IO Time: {total_io_time}")
+            if gc.device == "cuda":
+                print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
         dist.barrier()
         gc.start_eval(metadata={"epoch_num": E})
         if E % 4 == 0:
