@@ -61,6 +61,8 @@ def valid_step(x, y, model, loss_fn, metric_tracker):
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
+    if prof is None:
+        return total_time
     backend = "mpi:" if dist.get_backend() == "mpi" else "nccl:"
     for event in list(prof.key_averages()):
         if backend in event.key:
@@ -241,7 +243,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
             print(f"Processing Speed: {(dataset_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
             if gc["data"]["n_epochs"] == E:
-                print(f"Communication Time: {0}")  # get_comm_time(prof)}")
+                print(f"Communication Time: {get_comm_time(prof)}")
             print(f"Total IO Time: {total_io_time}")
             if gc.device == "cuda":
                 print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")

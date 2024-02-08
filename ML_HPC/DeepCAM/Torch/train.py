@@ -58,6 +58,8 @@ def dummy_loaders(n_samples):
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
+    if prof is None:
+        return total_time
     backend = "mpi:" if dist.get_backend() == "mpi" else "nccl:"
     for event in list(prof.key_averages()):
         if backend in event.key:
