@@ -1,6 +1,8 @@
+from sympy import Q
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import poptorch
 
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext()
@@ -45,20 +47,26 @@ class StandardCosmoFlow(nn.Module):
         
     def forward(self, x, target):
 
-        for block in self.conv_blocks:
-            x = block(x)
+        with poptorch.Block(ipu_id=0):
+            x = self.conv_blocks[0](x)
+        with poptorch.Block(ipu_id=1):
+            x = self.conv_blocks[1](x)
+            x = self.conv_blocks[2](x)
+        with poptorch.Block(ipu_id=2):
+            x = self.conv_blocks[3](x)
+            x = self.conv_blocks[4](x)
+            x = x.permute(0,2,3,4,1).flatten(1)
+            
+        with poptorch.Block(ipu_id=3):
+            x = F.leaky_relu(self.l1(x), negative_slope=0.3)
+            if self.dropout:
+                x = self.d1(x)
+            x = F.leaky_relu(self.l2(x), negative_slope=0.3)
+            if self.dropout:
+                x = self.d2(x)
 
-        x = x.permute(0,2,3,4,1).flatten(1)
-        
-        x = F.leaky_relu(self.l1(x), negative_slope=0.3)
-        if self.dropout:
-            x = self.d1(x)
-        
-        x = F.leaky_relu(self.l2(x), negative_slope=0.3)
-        if self.dropout:
-            x = self.d2(x)
-
-        out = F.tanh(self.lO(x)) *1.2
-        return (out, self.criterion(out, target))
+            out = F.tanh(self.lO(x)) *1.2
+            loss = self.criterion(out, target)
+        return (out, loss)
      
 
