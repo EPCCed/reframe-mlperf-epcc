@@ -3,4 +3,5 @@ packaging
 click 
 torchmetrics 
 tfrecord 
+h5py
 "git+https://github.com/mlperf/logging.git"

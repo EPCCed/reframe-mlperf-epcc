@@ -58,28 +58,28 @@ def get_comm_time(prof: torch.profiler.profile):
     return total_time
 
 @click.command()
-@click.option("--device", "-d", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
-@click.option("--config", "-c", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
+@click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
+@click.option("--config", "-c", default=os.path.join(os.getcwd(), "config.yaml"), show_default=True, type=str, help="Path to config.yaml. If not provided will default to config.yaml in the cwd")
 @click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
-@click.option("--global-batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
-@click.option("--local-batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
-@click.option("--t_subset_size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
-@click.option("--v_subset_size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
-def main(device, config, data_path, gbs, lbs, t_subset, v_subset):
+@click.option("--global_batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
+@click.option("--local_batchsize", "-lbs", default=None, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
+@click.option("--t_subset_size", default=None, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
+@click.option("--v_subset_size", default=None, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
+def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
     if device and device.lower() in ('cpu', "gpu", "cuda"):
         gc["device"] = device.lower()
-    if data_path:
-        gc["data"]["data_dir"] = data_path
-    if gbs:
-        gc["data"]["global_batch_size"] = gbs
-    if lbs:
-        gc["data"]["local_batch_size"]= lbs
-    if t_subset:
-        gc["data"]["n_train"] = t_subset
-    if v_subset:
-        gc["data"]["n_eval"] = v_subset
+    if data_dir:
+        gc["data"]["data_dir"] = data_dir
+    if global_batchsize is not None:
+        gc["data"]["global_batch_size"] = global_batchsize
+    if local_batchsize is not None:
+        gc["data"]["local_batch_size"]= local_batchsize
+    if t_subset_size is not None:
+        gc["data"]["train_subset"] = t_subset_size
+    if v_subset_size is not None:
+        gc["data"]["val_subset"] = v_subset_size
         
     torch.backends.cudnn.benchmark = True
     print(gc.device)

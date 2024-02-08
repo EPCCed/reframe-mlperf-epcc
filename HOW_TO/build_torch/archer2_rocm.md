@@ -28,6 +28,8 @@ conda install anaconda::ncurses
 conda install -c conda-forge ncurses
 ```
 
+
+
 # Build Pytorch
 ```bash
 srun --gpus=1 --time=01:00:00 --partition=gpu --qos=gpu-shd --account=[CODE] --pty /bin/bash

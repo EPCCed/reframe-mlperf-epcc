@@ -100,9 +100,9 @@ def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.
 @click.option("--config", "-c", default=os.path.join(os.getcwd(), "config.yaml"), show_default=True, type=str, help="Path to config.yaml. If not provided will default to config.yaml in the cwd")
 @click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
 @click.option("--global_batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
-@click.option("--local_batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
-@click.option("--t_subset_size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
-@click.option("--v_subset_size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
+@click.option("--local_batchsize", "-lbs", default=None, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
+@click.option("--t_subset_size", default=None, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
+@click.option("--v_subset_size", default=None, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
 def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
@@ -110,13 +110,13 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         gc["device"] = device.lower()
     if data_dir:
         gc["data"]["data_dir"] = data_dir
-    if global_batchsize:
+    if global_batchsize is not None:
         gc["data"]["global_batch_size"] = global_batchsize
-    if local_batchsize:
+    if local_batchsize is not None:
         gc["data"]["local_batch_size"]= local_batchsize
-    if t_subset_size:
+    if t_subset_size is not None:
         gc["data"]["train_subset"] = t_subset_size
-    if v_subset_size:
+    if v_subset_size is not None:
         gc["data"]["val_subset"] = v_subset_size
     
     torch.manual_seed(1)
