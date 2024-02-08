@@ -58,8 +58,9 @@ def dummy_loaders(n_samples):
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
+    backend = "mpi:" if dist.get_backend() == "mpi" else "nccl:"
     for event in list(prof.key_averages()):
-        if "mpi:" in event.key or "nccl" in event.key:
+        if backend in event.key:
             total_time += event.cpu_time_total * 1e-6
             total_time += event.cuda_time_total * 1e-6
     return total_time
@@ -188,6 +189,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0:
+            print(f"Train Loss at Epoch {E}: {loss}")
             print(f"Processing Speed: {(train_data_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
             print(f"Communication Time: {get_comm_time(prof)}")

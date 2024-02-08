@@ -2,7 +2,6 @@ from pathlib import Path
 import sys
 import os
 
-from cs2.ML.ResNet50.data import get_val_dataloader
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
 import time
@@ -51,8 +50,9 @@ class DistributedMAE:
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
+    backend = "mpi:" if dist.get_backend() == "mpi" else "nccl:"
     for event in list(prof.key_averages()):
-        if "mpi:" in event.key:
+        if backend in event.key:
             total_time += event.cpu_time_total * 1e-6
             total_time += event.cuda_time_total * 1e-6
     return total_time
