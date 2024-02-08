@@ -1,0 +1,6 @@
+tqdm
+packaging
+click 
+torchmetrics 
+tfrecord 
+"git+https://github.com/mlperf/logging.git"

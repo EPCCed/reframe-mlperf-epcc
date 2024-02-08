@@ -15,14 +15,6 @@ class SingletonMetaClass(type):
             cls._instances[cls] = super(SingletonMetaClass, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
 
-def _run_on_0(func):
-    def wrapper(*args, **kwrags):
-        if "sync" in kwrags.keys():
-            if kwrags["sync"]:
-                dist.barrier()
-        if dist.get_rank() == 0:
-            return func(*args, **kwrags)
-    return wrapper
 
 class GlobalContext(dict, metaclass=SingletonMetaClass):
     _config_path = None
@@ -32,21 +24,29 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     being a singleton class prevents having to read the yaml file every time
     """
     def __init__(self, config_path=None):
-        if not self.__dict__:
+        if not self.__dict__ and config_path is not None:
             with open(config_path, "r") as stream:
                 self.clear()
                 self.update(yaml.safe_load(stream))
                 if self["device"].lower() == 'gpu':
                     self["device"] = "cuda"
+            self.times = []
+    
+    @property
+    def device(self):
+        return self["device"].lower()
     
     def update_config(self, config_path):
         with open(config_path, "r") as stream:
-            self.__dict__.clear()
-            self.__dict__.update(yaml.safe_load(stream))
+            self.clear()
+            self.update(yaml.safe_load(stream))
             if self["device"].lower() == 'gpu':
                 self["device"] = "cuda"
     
-    @_run_on_0
+    @property
+    def world_size(self):
+        return self["training"]["num_ipus"]
+    
     def log_cosmoflow(self):
         self.mllogger = mllog.get_mllogger()
         self.mllogger.default_namespace = "cosmoflow"
@@ -57,9 +57,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
         self.mllogger.event(key=log_constants.OPT_BASE_LR, value=self["lr_schedule"]["base_lr"])
         self.mllogger.event(key=log_constants.OPT_LR_WARMUP_EPOCHS, value=self["lr_schedule"]["n_warmup_epochs"])
         self.mllogger.event(key=log_constants.OPT_LR_DECAY_FACTOR, value=max(self["lr_schedule"]["decay_schedule"].values()) if len(self["lr_schedule"]["decay_schedule"])>0 else 1)
-        self.log_cluster_info()
     
-    @_run_on_0
     def log_deepcam(self):
         self.mllogger = mllog.get_mllogger()
         self.mllogger.default_namespace = "deepcam"
@@ -89,15 +87,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             self.mllogger.event(key="scheduler_eta_min", value=self["lr_schedule"]["eta_min"])
         
         self.mllogger.event(key="gradient_accumulation_frequency", value=self["data"]["gradient_accumulation"])
-        self.log_cluster_info()
-    
-    @_run_on_0
-    def log_cluster_info(self):
-        self.mllogger.event(key="number_of_ranks", value=dist.get_world_size())
-        self.mllogger.event(key="number_of_nodes", value=int(os.environ["SLURM_NNODES"]))
-        self.mllogger.event(key="accelerators_per_node", value=int(os.environ["SLURM_NTASKS_PER_NODE"]))
 
-    @_run_on_0
     def print_0(self, *args, **kwargs):
         print(*args, **kwargs)
     
@@ -111,45 +101,34 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             with record_function(name):
                 yield prof
     
-    @_run_on_0
     def log_event(self, *args, sync=True, **kwargs):
         self.mllogger.event(*args, **kwargs)
     
-    @_run_on_0
     def log_seed(self, seed, sync=True):
         self.mllogger.event(key=log_constants.SEED, value=seed)
 
-    @_run_on_0
     def start_init(self, sync=True):
         self.mllogger.start(key=log_constants.INIT_START, value=None)
     
-    @_run_on_0
     def stop_init(self, sync=True):
         self.mllogger.end(key=log_constants.INIT_STOP, value=None)
     
-    @_run_on_0
     def start_run(self, sync=True):
         print("\n")
         self.mllogger.start(key=log_constants.RUN_START, value=None)
     
-    @_run_on_0
     def stop_run(self, metadata = {"status": "success"}, sync=True):
         self.mllogger.end(key=log_constants.RUN_STOP, value=None, metadata=metadata)
     
-    @_run_on_0
     def start_epoch(self, metadata, sync=True):
         self.mllogger.start(key=log_constants.EPOCH_START, value=None, metadata=metadata)
 
-    @_run_on_0
     def stop_epoch(self, metadata, sync=True):
         self.mllogger.end(key=log_constants.EPOCH_STOP, value=None, metadata=metadata)
     
-    @_run_on_0
     def start_eval(self, metadata, sync=True):
         self.mllogger.start(key=log_constants.EVAL_START, value=None, metadata=metadata)
     
-    @_run_on_0
     def stop_eval(self, metadata, sync=True):
         self.mllogger.end(key=log_constants.EVAL_STOP, value=None, metadata=metadata)
-
 

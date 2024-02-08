@@ -2,6 +2,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+import poptorch
+
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -63,16 +65,20 @@ class ResNet50(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x, target):
-        out = self.relu(self.bn1(self.conv1(x)))
-        out = self.mp(out)
-        out = self.layer1(out)
-        out = self.layer2(out)
-        out = self.layer3(out)
-        out = self.layer4(out)
-        out = self.avg_pool(out)
-        out = torch.flatten(out, 1, -1)
-        out = self.linear(out)
-        return self.criterion(out, target)
+        poptorch.Block.useAutoId()
+        with poptorch.Block(ipu_id=0):
+            out = self.relu(self.bn1(self.conv1(x)))
+            out = self.mp(out)
+            out = self.layer1(out)
+            out = self.layer2(out)
+        with poptorch.Block(ipu_id=1):
+            out = self.layer3(out)
+            out = self.layer4(out)
+            out = self.avg_pool(out)
+            out = torch.flatten(out, 1, -1)
+            out = self.linear(out)
+            loss = self.criterion(out, target)
+        return loss, out
 
 if __name__ == "__main__":
     model = ResNet50(1000)

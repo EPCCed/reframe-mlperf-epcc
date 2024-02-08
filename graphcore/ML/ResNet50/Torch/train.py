@@ -35,7 +35,10 @@ def main(config):
     options = poptorch.Options()
     val_options = poptorch.Options()
     options.replicationFactor(gc["training"]["num_ipus"])
-    #options.deviceIterations(32)
+    options.deviceIterations(4)
+    options.Training.gradientAccumulation(3)
+    val_options.replicationFactor(gc["training"]["num_ipus"])
+
     options.randomSeed(1)
     torch.manual_seed(1)
 
@@ -76,15 +79,17 @@ def main(config):
     while True:
         start = time.time()
         for x, y in train_data:
-            loss = model(x, y)
+            loss, out = model(x, y)
         
         train_accuracy = train_metric(out, y)
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
         print(f"Train Accuracy at Epoch {E}: {train_accuracy}")
+        print(f"Time For Epoch: {total_time}")
         print(f"Train Loss at Epoch {E}: {loss}")
-        dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1000000
+        dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 4096*4 #1000000
         print(f"Processing Speed: {(dataset_size/total_time).item()}")
+        print("\n")
 
         if E % 4 == 0:
             for x, y in val_data:
@@ -97,7 +102,7 @@ def main(config):
         if "val_accuracy" in dir(): 
             if E == gc["data"]["n_epochs"] or val_accuracy >= gc["training"]["target_accuracy"]:
                 break
-        scheduler.step()
+        #scheduler.step()
 
 
 if __name__ == "__main__":

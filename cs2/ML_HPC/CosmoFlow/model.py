@@ -4,14 +4,34 @@ sys.path.append("/home/z043/z043/crae-cs1/chris-ml-intern/cs2/modelzoo") # Adds 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import poptorch
 
+class SimulatedMaxPool3D(nn.Module):
+    def __init__(self, kernel_size):
+        super(SimulatedMaxPool3D, self).__init__()
+        self.kernel_size = kernel_size
+        self.maxpool2d_1 = nn.MaxPool2d(kernel_size=self.kernel_size)
+        self.maxpool2d_2 = nn.MaxPool2d(kernel_size=(self.kernel_size, 1))
+
+    def forward(self, x):
+        # x is expected to have shape (N, C, D, H, W)
+        n, c, d, h, w = x.shape
+        # Apply MaxPool2D to each slice along the depth dimension
+        with poptorch.MultiConv():
+            output_slices = [self.maxpool2d_1(x[:,:,i,:,:]) for i in range(d)]
+        output = torch.stack(output_slices, dim=2)
+
+        with poptorch.MultiConv():
+            output_slices = [self.maxpool2d_2(output[:,:,:,i,:]) for i in range(h//self.kernel_size)]
+        output = torch.stack(output_slices, dim=3)a
+        return output
 
 class ConvBlock(nn.Module):
     def __init__(self, in_channels, out_channels, k_size):
         super().__init__()
         self.conv = nn.Conv3d(in_channels, out_channels, kernel_size=k_size, padding=1)
         self.act = nn.LeakyReLU(negative_slope=0.3)
-        self.pool = nn.MaxPool3d(kernel_size=2, stride=2)
+        self.pool = SimulatedMaxPool3D(kernel_size=2)
 
         torch.nn.init.xavier_uniform_(self.conv.weight)
         torch.nn.init.zeros_(self.conv.bias)

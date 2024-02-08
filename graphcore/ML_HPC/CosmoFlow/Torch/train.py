@@ -1,7 +1,7 @@
 from pathlib import Path
 import sys
 import os
-path_root = Path(__file__).parents[3]
+path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
 import time
 import warnings
@@ -13,9 +13,9 @@ import torch.nn as nn
 import poptorch
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/CosmoFlow/Torch/config.yaml")
+gc = GlobalContext()
 from ML_HPC.CosmoFlow.Torch.model.cosmoflow import StandardCosmoFlow
-from ML_HPC.CosmoFlow.Torch.data.TF_record_loader import get_train_dataloader, get_val_dataloader
+from ML_HPC.CosmoFlow.Torch.data.TF_record_loader import get_train_dataloader, get_val_dataloader, get_dummy_dataloader
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
 
 
@@ -50,15 +50,20 @@ def main(config):
     options = poptorch.Options()
     val_options = poptorch.Options()
     options.replicationFactor(gc["training"]["num_ipus"])
+    options.deviceIterations(4)
+    options.Training.gradientAccumulation(8)
     options.randomSeed(1)
+    val_options.replicationFactor(gc["training"]["num_ipus"])
+    val_options.deviceIterations(4)
+    val_options.randomSeed(1)
     torch.manual_seed(1)
 
     gc.log_cosmoflow()
     gc.start_init()
     gc.log_seed(1)
     
-    train_data = get_train_dataloader(options)
-    val_data = get_val_dataloader(val_options)
+    train_data = get_dummy_dataloader(options, 4096*4) #get_train_dataloader(options)
+    val_data = get_dummy_dataloader(val_options, 4096*4) #get_val_dataloader(val_options)
 
     net = StandardCosmoFlow()
     

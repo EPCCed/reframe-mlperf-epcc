@@ -1,6 +1,8 @@
 from pathlib import Path
 import sys
 import os
+
+from cs2.ML.ResNet50.data import get_val_dataloader
 path_root = Path(__file__).parents[3]
 sys.path.append(str(path_root))
 import time
@@ -16,7 +18,8 @@ from tqdm import tqdm
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext()
 from ML_HPC.CosmoFlow.Torch.model.cosmoflow import StandardCosmoFlow
-from ML_HPC.CosmoFlow.Torch.data.TF_record_loader import get_train_dataloader, get_val_dataloader
+import ML_HPC.CosmoFlow.Torch.data.TF_record_loader as TF_rl
+import ML_HPC.CosmoFlow.Torch.data.h5_dataloader as h5_dl
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
 
 
@@ -91,7 +94,12 @@ def main(device, config, data_path, gbs, lbs, t_subset, v_subset):
     gc.start_init()
     gc.log_seed(1)
 
-    
+    if gc["data"]["h5"]:
+        get_train_dataloader = h5_dl.get_train_dataloader
+        get_val_dataloader = h5_dl.get_val_dataloader
+    else:
+        get_train_dataloader = TF_rl.get_train_dataloader
+        get_val_dataloader = TF_rl.get_val_dataloader
     train_data = get_train_dataloader()
     val_data = get_val_dataloader()
     
