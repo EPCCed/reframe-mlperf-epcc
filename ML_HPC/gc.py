@@ -35,6 +35,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     being a singleton class prevents having to read the yaml file every time
     """
     def __init__(self, config_path=None):
+        self.mllogger = mllog.get_mllogger()
         if not self.__dict__ and config_path is not None:
             with open(config_path, "r") as stream:
                 self.clear()
@@ -95,7 +96,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @_run_on_0
     def log_cosmoflow(self):
-        self.mllogger = mllog.get_mllogger()
         self.mllogger.default_namespace = "cosmoflow"
         self.mllogger.event(key=log_constants.OPT_NAME, value="SGD")
         self.mllogger.event(key=log_constants.LARS_OPT_MOMENTUM, value=self["opt"]["momentum"])
@@ -108,7 +108,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     
     @_run_on_0
     def log_deepcam(self):
-        self.mllogger = mllog.get_mllogger()
         self.mllogger.default_namespace = "deepcam"
         self.mllogger.event(key=log_constants.OPT_NAME, value=self["opt"]["name"].upper())
         if self["opt"]["name"].upper() == "ADAM":

@@ -50,6 +50,7 @@ export BUILD_CAFFE2=0
 export BUILD_TEST=0
 export PYTORCH_ROCM_ARCH=gfx90a
 export BUILD_CAFFE2_OPS=0
+export LDFLAGS=-L/$CONDA_PREFIX/lib
 python tools/amd_build/build_amd.py
 python setup.py develop
 # to re-build run: python setup.py clean 
@@ -59,7 +60,7 @@ python setup.py develop
 git clone --single-branch --branch release/0.15 https://github.com/pytorch/vision.git
 source $PREFIX/miniconda/bin/activate mlperf-torch
 conda install libpng libjpeg-turbo
-pip install expecttest flake8 typing mypy pytest pytest-mock scipy
+pip install expecttest flake8 typing mypy pytest pytest-mock scipy pillow
 srun --gpus=1 --time=01:00:00 --partition=gpu --qos=gpu-shd --account=[CODE] --pty /bin/bash
 source $PREFIX/miniconda/bin/activate mlperf-torch
 module load PrgEnv-gnu

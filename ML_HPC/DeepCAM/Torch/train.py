@@ -88,12 +88,14 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if v_subset_size:
         gc["data"]["val_subset"] = v_subset_size
 
-
+    
     torch.manual_seed(333)
     gc.init_dist()
     if gc.device == "cuda":
         torch.cuda.set_device("cuda:" + str(gc.local_rank))
     
+    gc.log_deepcam()
+
     gc.start_init()
     
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  

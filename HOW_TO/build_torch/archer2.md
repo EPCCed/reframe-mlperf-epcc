@@ -38,6 +38,7 @@ export USE_CUDA=0
 export USE_ROCM=0
 export USE_DISTRIBUTED=1
 export BUILD_CAFFE2=0
+export BUILD_CAFFE2_OPS=0
 export BUILD_TEST=0
 python setup.py develop
 ```
@@ -46,7 +47,7 @@ python setup.py develop
 ```bash
 git clone --single-branch --branch release/0.15 https://github.com/pytorch/vision.git
 conda install libpng libjpeg-turbo
-pip install expecttest flake8 typing mypy pytest pytest-mock scipy
+pip install expecttest flake8 typing mypy pytest pytest-mock scipy pillow
 srun --exclusive --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:1 --account=[CODE] --pty /usr/bin/bash --login
 source $PREFIX/miniconda/bin/activate mlperf-torch
 module unload cmake
