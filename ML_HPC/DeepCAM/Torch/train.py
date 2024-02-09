@@ -140,6 +140,11 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     scaler = torch.cuda.amp.grad_scaler.GradScaler(enabled=gc["training"]["amp"] and gc.device == "cuda")
     
     gc.stop_init()
+    
+    model.eval()
+    initial_loss = criterion.forward(model.forward(torch.ones(1, 16, 768, 1152).to(gc.device)), torch.ones(1, 1, 768, 1152).to(gc.device))
+    model.train()
+    
     gc.start_run()
 
     epoch = 0
@@ -191,7 +196,9 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0:
-            print(f"Train Loss at Epoch {E}: {loss}")
+            if epoch == 0:
+                print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
+            print(f"Change In Train Loss at Epoch {epoch}: {loss}")
             print(f"Processing Speed: {(train_data_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
             print(f"Communication Time: {get_comm_time(prof)}")

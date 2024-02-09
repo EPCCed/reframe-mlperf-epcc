@@ -196,14 +196,21 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     gc.stop_init()
 
 
-    if gc["training"]["benchmark"] and gc.device == "cuda":
+    if gc["training"]["benchmark"] and gc.device == "cuda" and False:
         gc.print_0("Started Warmup")
-        for i in range(1):
-            for x, y in train_data:
-                x, y = x.to(gc.device), y.to(gc.device)
+        for x, y in train_data:
+            x, y = x.to(gc.device), y.to(gc.device)
         gc.print_0("Ended Warmup")
         dist.barrier()
 
+    model.eval()
+    loss_fn.eval()
+    sample_x = torch.ones(1, 3, 244, 244, dtype=torch.float32).to(gc.device)
+    sample_y = torch.randint(1, 1000, (1,), dtype=torch.int64).to(gc.device)
+    initial_loss = loss_fn.forward(model.forward(sample_x), sample_y)
+    model.train()
+    loss_fn.train()
+    
     gc.start_run()
     
     model.train()
@@ -236,6 +243,9 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0 and gc["training"]["benchmark"]:
+            if E == 1:
+                print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
+                
             #print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
 
