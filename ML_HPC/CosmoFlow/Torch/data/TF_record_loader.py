@@ -66,9 +66,9 @@ def get_train_dataloader():
                       sampler=sampler, 
                       batch_size=local_bs, 
                       drop_last=True,
-                      num_workers=4,
+                      #num_workers=2,
                       pin_memory=True if gc.device != "cpu" else False,
-                      prefetch_factor=gc["data"]["prefetch"]
+                      #prefetch_factor=gc["data"]["prefetch"]
                       )
 
 def get_val_dataloader():
@@ -85,9 +85,9 @@ def get_val_dataloader():
                       sampler=sampler, 
                       batch_size=local_bs,
                       drop_last=True,
-                      num_workers=4,
+                      #num_workers=2,
                       pin_memory=True if gc.device != "cpu" else False,
-                      prefetch_factor=gc["data"]["prefetch"]
+                      #prefetch_factor=gc["data"]["prefetch"]
                       )
 
 

@@ -2,7 +2,8 @@ from pathlib import Path
 import sys
 import os
 
-path_root = Path(__file__).parents[3]
+#path_root = Path(__file__).parents[3]
+path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
 import time
 import warnings
@@ -68,7 +69,7 @@ def get_comm_time(prof: torch.profiler.profile):
 def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
+    if device.lower() in ('cpu', "gpu", "cuda"):
         gc["device"] = device.lower()
     if data_dir:
         gc["data"]["data_dir"] = data_dir
@@ -103,7 +104,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     train_data = get_train_dataloader()
     val_data = get_val_dataloader()
     
-    if gc.rank == 0:
+    if gc.rank == -1:
         train_data = tqdm(train_data, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
 
     model = StandardCosmoFlow().to(gc.device)
@@ -159,7 +160,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         total_io_time *= 1e-9
         
         total_time = time.time()-start
-        total_time = torch.tensor(total_time)
+        total_time = torch.tensor(total_time).to(gc.device)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
         if gc.rank == 0:

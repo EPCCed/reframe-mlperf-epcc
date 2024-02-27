@@ -108,7 +108,7 @@ def custom_reduce_hook(state: object, bucket: dist.GradBucket) -> torch.futures.
 def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
+    if device.lower() in ('cpu', "gpu", "cuda"):
         gc["device"] = device.lower()
     if data_dir:
         gc["data"]["data_dir"] = data_dir

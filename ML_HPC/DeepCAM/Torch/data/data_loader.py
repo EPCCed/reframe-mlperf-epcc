@@ -123,9 +123,6 @@ class CamDataset(Dataset):
         self.data_shift = np.reshape( data_shift, (1, 1, data_shift.shape[0]) ).astype(np.float32)
         self.data_scale = np.reshape( data_scale, (1, 1, data_scale.shape[0]) ).astype(np.float32)
 
-
-
-
     def __len__(self):
         return self.local_size
 
@@ -140,12 +137,8 @@ class CamDataset(Dataset):
 
         #load data and project
         with h5.File(filename, "r") as f:
-            try:
-                data = f["climate"]["data"][..., self.channels]
-                label = f["climate"]["labels_0"][...].astype(np.int64)
-            except Exception as e:
-                print(filename, "\n\n")
-                raise e
+            data = f["climate"]["data"][..., self.channels]
+            label = f["climate"]["labels_0"][...].astype(np.int64)
         
         #preprocess
         data = self.data_scale * (data - self.data_shift)
@@ -164,7 +157,7 @@ class DummyDataset(Dataset):
         return self.n_samples
 
     def __getitem__(self, idx):
-        return torch.ones(16, 768, 1152),  torch.ones(3, 768, 1152), "file.txt"
+        return torch.ones(16, 768, 1152).to(gc.device),  torch.ones(3, 768, 1152).to(gc.device), "file.txt"
 
 
 def get_datashapes():
@@ -172,6 +165,22 @@ def get_datashapes():
 
 
 def get_dataloaders():
+    local_bs = gc["data"]["global_batch_size"] // gc.world_size
+    if gc["data"]["gradient_accumulation_freq"] == -1:
+        if local_bs > 64:
+            gc["data"]["gradient_accumulation_freq"] = local_bs // 64
+
+            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+        else:
+            gc["data"]["gradient_accumulation_freq"] = 1
+    else:
+        local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+    
+    if gc["data"]["local_batch_size"]:
+        gc["data"]["gradient_accumulation_freq"] = 1
+        local_bs = gc["data"]["local_batch_size"]
+        gc["data"]["global_batch_size"] = gc.world_size * local_bs
+    
     # import only what we need
     train_dir = os.path.join(gc["data"]["data_dir"], "train")
     train_set = CamDataset(train_dir, 
@@ -190,12 +199,12 @@ def get_dataloaders():
                                                    drop_last = True)
     
     train_loader = DataLoader(train_set,
-                              batch_size=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"],
+                              batch_size=local_bs,
                               num_workers =4,
                               sampler = distributed_train_sampler,
                               pin_memory = True if gc.device != "cpu" else False,
                               drop_last = True,
-                              prefetch_factor=gc["data"]["prefetch"])
+    prefetch_factor=gc["data"]["prefetch"])
 
     train_size = train_set.global_size
 
@@ -212,10 +221,10 @@ def get_dataloaders():
     # use batch size = 1 here to make sure that we do not drop a sample
     validation_loader = DataLoader(validation_set,
                                    batch_size=1,
-                                   num_workers = 4,
+                                   #num_workers = 4,
                                    pin_memory = True if gc.device != "cpu" else False,
                                    drop_last = False,
-                                   prefetch_factor=gc["data"]["prefetch"])
+    )#prefetch_factor=gc["data"]["prefetch"])
     
     validation_size = validation_set.global_size    
         

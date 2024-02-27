@@ -1,32 +1,27 @@
-device: cpu
-
+device: cuda
 data:
-    data_dir: /work/z19/shared/mlperf-hpc-eleanor/deepcam/mini/deepcam-data-n512
-    global_batch_size: 64
-    gradient_accumulation: 1
-    shuffle: True
-    n_epochs: 128
-    prefetch: 4
-
+  data_dir: /work/z19/shared/mlperf-hpc-eleanor/deepcam/mini/deepcam-data-n512
+  global_batch_size: 16
+  local_batch_size: 4
+  gradient_accumulation_freq: 1
+  shuffle: true
+  n_epochs: 1
+  prefetch: 4
 opt:
-    name: Adam
-    betas: [0.9, 0.999]
-    weight_decay: 0.0001
-
+  name: Adam
+  betas:
+    - 0.9
+    - 0.999
+  weight_decay: 0.0001
 lr_schedule:
-    type: cosine_annealing # or multistep
-    #for both cos & mul
-    base_lr: 0.001
-    lr_warmup_steps: 400
-    lr_warmup_factor: 1
-    #mul
-    milestones: 800
-    decay_rate: 0.1
-    #cos
-    t_max: 10000
-    eta_min: 0
-
+  type: cosine_annealing
+  base_lr: 0.001
+  lr_warmup_steps: 400
+  lr_warmup_factor: 1
+  milestones: 800
+  decay_rate: 0.1
+  t_max: 10000
+  eta_min: 0
 training:
-    target_iou: 0.82  
-    amp: False
-    
+  target_iou: 0.82
+  amp: false

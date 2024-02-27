@@ -42,7 +42,6 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                 self.update(yaml.safe_load(stream))
                 if self["device"].lower() == 'gpu':
                     self["device"] = "cuda"
-            self.times = []
 
     def init_dist(self):
         if dist.is_mpi_available() and not dist.is_torchelastic_launched():
@@ -55,12 +54,16 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
 
     @property
     def rank(self):
-        return dist.get_rank()
+        if "rank" not in self.keys():
+            self["rank"] = dist.get_rank()
+        return self["rank"]
     
     @property
     def world_size(self):
-        return dist.get_world_size()
-    
+        if "world_size" not in self.keys():
+            self["world_size"] = dist.get_world_size()
+        return self["world_size"]
+
     @property
     def local_rank(self):
         if "local_rank" not in self.keys():
@@ -82,7 +85,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                 taskspernode = int(os.environ["SLURM_NTASKS"]) // int(os.environ["SLURM_NNODES"])
                 self["local_world_size"] = taskspernode
         return self["local_world_size"]
-    
+            
     @property
     def device(self):
         return self["device"].lower()
@@ -134,7 +137,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             self.mllogger.event(key="scheduler_t_max", value=self["lr_schedule"]["t_max"])
             self.mllogger.event(key="scheduler_eta_min", value=self["lr_schedule"]["eta_min"])
         
-        self.mllogger.event(key="gradient_accumulation_frequency", value=self["data"]["gradient_accumulation"])
+        self.mllogger.event(key="gradient_accumulation_frequency", value=self["data"]["gradient_accumulation_freq"])
         self.log_cluster_info()
     
     @_run_on_0

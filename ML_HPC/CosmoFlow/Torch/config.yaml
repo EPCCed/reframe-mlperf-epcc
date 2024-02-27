@@ -1,13 +1,13 @@
-device: cpu
+device: cuda
 
 data:
-    data_dir: /work/z19/shared/mlperf-hpc/cosmoflow/full/cosmoUniverse_2019_05_4parE_tf_v2/
-    h5: True
+    data_dir: /mnt/ceph_rbd/cosmoUniverse_2019_05_4parE_tf_v2/
+    h5: False
     global_batch_size: 128
-    local_batch_size: 0 # set to 0 to use global
+    local_batch_size: 8 # set to 0 to use global
     n_epochs: 1
-    n_train: 2048 #524288
-    n_eval: 1024 #65536
+    n_train: 524288
+    n_eval: 65536
     gradient_accumulation_freq: 1
     compression: gzip
     apply_log: True
