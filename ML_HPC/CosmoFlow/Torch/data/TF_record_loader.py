@@ -15,6 +15,7 @@ class CosmoDataset(Dataset):
         else:
             size = gc["data"]["n_eval"]
         self.files = os.listdir(dataset_path)[:size]
+        self.files.sort()
         self.root = dataset_path
         self.length = len(self.files)
     
@@ -62,13 +63,13 @@ def get_train_dataloader():
         gc["data"]["gradient_accumulation_freq"] = 1
         local_bs = gc["data"]["local_batch_size"]
         gc["data"]["global_batch_size"] = gc.world_size * local_bs
-    return DataLoader(data, 
+    return DataLoader(data,
                       sampler=sampler, 
                       batch_size=local_bs, 
                       drop_last=True,
-                      #num_workers=2,
+                      num_workers=4,
                       pin_memory=True if gc.device != "cpu" else False,
-                      #prefetch_factor=gc["data"]["prefetch"]
+                      prefetch_factor=gc["data"]["prefetch"]
                       )
 
 def get_val_dataloader():

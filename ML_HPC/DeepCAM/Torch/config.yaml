@@ -6,7 +6,7 @@ data:
   gradient_accumulation_freq: 1
   shuffle: true
   n_epochs: 1
-  prefetch: 4
+  prefetch: 16
 opt:
   name: Adam
   betas:

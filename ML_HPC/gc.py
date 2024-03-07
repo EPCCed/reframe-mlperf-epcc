@@ -170,14 +170,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             with profile(activities=activities, with_flops=True) as prof:
                 with record_function(name):
                     yield prof
-    
-    def throughput(self, iterable):
-        start = time.time()
-        for data in iterable:
-            yield data
-        self.times.append(time.time() - start)
         
-
     @_run_on_0
     def log_event(self, *args, sync=True, **kwargs):
         self.mllogger.event(*args, **kwargs)

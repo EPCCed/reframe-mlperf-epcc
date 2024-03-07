@@ -136,7 +136,7 @@ class CamDataset(Dataset):
         filename = os.path.join(self.source, self.files[idx])
 
         #load data and project
-        with h5.File(filename, "r") as f:
+        with h5.File(filename, "r", rdcc_nbytes=1048576*50, rdcc_nslots=16) as f:
             data = f["climate"]["data"][..., self.channels]
             label = f["climate"]["labels_0"][...].astype(np.int64)
         
@@ -147,7 +147,7 @@ class CamDataset(Dataset):
             #transpose to NCHW
             data = np.transpose(data, (2,0,1))
         
-        return data, label, filename
+        return torch.from_numpy(data), torch.from_numpy(label)
 
 class DummyDataset(Dataset):
     def __init__(self, n_samples):
@@ -221,10 +221,10 @@ def get_dataloaders():
     # use batch size = 1 here to make sure that we do not drop a sample
     validation_loader = DataLoader(validation_set,
                                    batch_size=1,
-                                   #num_workers = 4,
+                                   num_workers = 8,
                                    pin_memory = True if gc.device != "cpu" else False,
                                    drop_last = False,
-    )#prefetch_factor=gc["data"]["prefetch"])
+    prefetch_factor=gc["data"]["prefetch"])
     
     validation_size = validation_set.global_size    
         

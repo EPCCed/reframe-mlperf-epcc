@@ -9,6 +9,7 @@ import warnings
 warnings.filterwarnings("ignore")
 import click
 from packaging import version
+import copy
 
 import torch
 import torch.distributed as dist
@@ -24,8 +25,10 @@ from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
 
 if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1:
     get_power = torch.cuda.power_draw
+    gpu_util = torch.cuda.utilization
 else:
     get_power = lambda : 0
+    gpu_util = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
     print(version.parse(torch.__version__))
 
@@ -150,36 +153,47 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
 
     epoch = 0
     stop_training = False
+
+    preload = 32 # batches
+    loaded = []
     model.train()
+    amp_type = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     # Train Loop
     while True:
+        data_iter = iter(copy.deepcopy(train_data))
+        for _ in range(preload):
+            loaded.append([x.cuda() for x in next(data_iter)])
         gc.start_epoch(metadata={"epoch_num": epoch+1})
         #train_data.sampler.set_epoch(epoch)
         model.train()
         start = time.time()
         total_io_time = 0
         power_draw = []
+        gpu_utilization = []
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
-            for idx, (x, y, _) in enumerate(train_data):
-                #x, y = x.to(gc.device), y.to(gc.device)
+            for idx in range(len(train_data)):
+                x, y = loaded.pop(0)
+                if idx < len(train_data) - preload:
+                    loaded.append([x.cuda(non_blocking=True) for x in next(data_iter)])
                 total_io_time += time.time_ns() - start_io    
-                power_draw.append(get_power())            
+                power_draw.append(get_power())
+                gpu_utilization.append(gpu_util())
                 if ((idx + 1)%gc["data"]["gradient_accumulation_freq"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
-                            with torch.autocast(device_type=gc.device, dtype=torch.bfloat16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                            with torch.autocast(device_type=gc.device, dtype=amp_type, enabled=gc["training"]["amp"] and gc.device == "cuda"):
                                 logits = model.forward(x)
                                 loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
                             scaler.scale(loss).backward()
                         
                     else:
-                        with torch.autocast(device_type=gc.device, dtype=torch.bfloat16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                        with torch.autocast(device_type=gc.device, dtype=amp_type, enabled=gc["training"]["amp"] and gc.device == "cuda"):
                             logits = model.forward(x)
                             loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
                         scaler.scale(loss).backward()
                 else: 
-                    with torch.autocast(device_type=gc.device, dtype=torch.bfloat16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                    with torch.autocast(device_type=gc.device, dtype=amp_type, enabled=gc["training"]["amp"] and gc.device == "cuda"):
                         logits = model.forward(x)
                         loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
                     scaler.scale(loss).backward()
@@ -188,10 +202,17 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     opt.zero_grad(set_to_none=True)
                     scheduler.step()
                 start_io = time.time_ns()
+                    
+                if idx % 16 == 0:
+                    if gc.rank == 0:
+                        print(f"Epoch: {epoch+1} Batch: {idx}/{len(train_data)} Train Time: {time.time()-start} IO Time: {total_io_time*1e-9}")
+        
         total_io_time *= 1e-9
         total_time = time.time()-start
         avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+        avg_gpu_util = torch.mean(torch.tensor(gpu_utilization, dtype=torch.float64)).to(gc.device)
         dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
+        dist.all_reduce(avg_gpu_util)
         if gc.rank == 0:
             if epoch == 0:
                 print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
@@ -201,6 +222,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
             print(f"Communication Time: {get_comm_time(prof)}")
             if gc.device == "cuda":
                 print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
+                print(f"Avg GPU Utilization: {avg_gpu_util/gc.world_size:.2f}")
             print(f"Total IO Time: {total_io_time}")
 
 

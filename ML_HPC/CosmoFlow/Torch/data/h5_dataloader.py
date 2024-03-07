@@ -27,7 +27,7 @@ class CosmoDataset(Dataset):
         else:
             x /= (torch.sum(x)/torch.prod(torch.tensor(x.shape)))
         
-        return x.to(torch.float16), y.to(torch.float16)
+        return x, y
     
 def get_train_dataloader():
     data = CosmoDataset(os.path.join(gc["data"]["data_dir"], "hdf5_train"), train=True)

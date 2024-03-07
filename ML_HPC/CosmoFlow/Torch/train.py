@@ -9,6 +9,9 @@ import time
 import warnings
 warnings.filterwarnings("ignore")
 import click
+import copy
+from datetime import datetime
+from packaging import version
 
 import torch 
 import torch.nn as nn
@@ -21,6 +24,15 @@ from ML_HPC.CosmoFlow.Torch.model.cosmoflow import StandardCosmoFlow
 import ML_HPC.CosmoFlow.Torch.data.TF_record_loader as TF_rl
 import ML_HPC.CosmoFlow.Torch.data.h5_dataloader as h5_dl
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
+
+if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1:
+    get_power = torch.cuda.power_draw
+    gpu_util = torch.cuda.utilization
+else:
+    get_power = lambda : 0
+    gpu_util = lambda : 0
+    print("Torch Version Too Low for GPU Power Metrics")
+    print(version.parse(torch.__version__))
 
 
 #Mean Absolute Error
@@ -45,7 +57,7 @@ class DistributedMAE:
         elif gc.world_size == 1:
             return (self._error / self._items).item()
         else:
-            info_tensor = torch.tensor([self._error, self._items])
+            info_tensor = torch.tensor([self._error, self._items]).to(gc.device)
             dist.all_reduce(info_tensor)
             return (info_tensor[0]/ info_tensor[1]).item()
 
@@ -78,9 +90,9 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if local_batchsize is not None:
         gc["data"]["local_batch_size"]= local_batchsize
     if t_subset_size is not None:
-        gc["data"]["train_subset"] = t_subset_size
+        gc["data"]["n_train"] = t_subset_size
     if v_subset_size is not None:
-        gc["data"]["val_subset"] = v_subset_size
+        gc["data"]["n_eval"] = v_subset_size
         
     torch.backends.cudnn.benchmark = True
     print(gc.device)
@@ -95,6 +107,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     gc.start_init()
     gc.log_seed(1)
 
+    print(gc["data"]["n_train"])
     if gc["data"]["h5"]:
         get_train_dataloader = h5_dl.get_train_dataloader
         get_val_dataloader = h5_dl.get_val_dataloader
@@ -105,7 +118,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     val_data = get_val_dataloader()
     
     if gc.rank == -1:
-        train_data = tqdm(train_data, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
+        train_data = tqdm(train_data, miniters=64, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
 
     model = StandardCosmoFlow().to(gc.device)
     if gc.world_size > 1:
@@ -126,18 +139,29 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     score = DistributedMAE()
     epoch= 0
 
+    preload = 32 # batches
+    loaded = []
+    print(len(train_data))
     while True:
         model.train()
         gc.start_epoch(metadata={"epoch_num": epoch+1})
+        data_iter = iter(copy.deepcopy(train_data))
+        for _ in range(preload):
+            loaded.append([x.cuda() for x in next(data_iter)])
         start = time.time()
+        power_draw = []
+        gpu_utilization = []
         total_io_time = 0
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
-            for b_idx, (x, y) in enumerate(train_data):
+            for idx in range(len(train_data)):
+                x, y = loaded.pop(0)
+                if idx < len(train_data) - preload:
+                    loaded.append([x.cuda(non_blocking=True) for x in next(data_iter)])
                 total_io_time += time.time_ns() - start_io
-                x, y = x.to(gc.device), y.to(gc.device)
-                
-                if b_idx%gc["data"]["gradient_accumulation_freq"] != 0:
+                power_draw.append(get_power())
+                gpu_utilization.append(gpu_util())
+                if idx%gc["data"]["gradient_accumulation_freq"] != 0:
                     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                         with model.no_sync():
                             logits = model.forward(x)
@@ -154,21 +178,34 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
 
                     opt.step()
                     opt.zero_grad()
+                
+                if idx % 64 == 0:
+                    if gc.rank == 0:
+                        print(f"Epoch: {epoch+1} Batch: {idx} Train Time: {time.time()-start} IO Time: {total_io_time*1e-9}")
+                
+                #dist.barrier()
             
                 start_io = time.time_ns()
-        
+        dist.barrier()
         total_io_time *= 1e-9
         
         total_time = time.time()-start
-        total_time = torch.tensor(total_time).to(gc.device)
-        dist.all_reduce(total_time)
-        total_time /= gc.world_size
+        avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+        avg_gpu_util = torch.mean(torch.tensor(gpu_utilization, dtype=torch.float64)).to(gc.device)
+        dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
+        dist.all_reduce(avg_gpu_util)
+        #total_time = torch.tensor([total_time]).to(gc.device)
+        #dist.all_reduce(total_time)
+        #total_time /= gc.world_size
         if gc.rank == 0:
             print(f"Train Loss at Epoch {epoch+1}: {loss}")
             dataset_size = gc["data"]["n_train"]
-            print(f"Processing Speed: {(dataset_size/total_time).item()}")
+            print(f"Processing Speed: {dataset_size/total_time}")
             print(f"Time For Epoch: {total_time}")
-            print(f"Communication Time: {get_comm_time(prof)}")
+            #print(f"Communication Time: {get_comm_time(prof)}")
+            if gc.device == "cuda":
+                print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
+                print(f"Avg GPU Utilization: {avg_gpu_util/gc.world_size:.2f}")
             print(f"Total IO Time: {total_io_time}")
 
         gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})

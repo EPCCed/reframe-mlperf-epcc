@@ -59,7 +59,7 @@ def validate(net, criterion, validation_loader, epoch):
         # iterate over validation sample
         step_val = 0
         # only print once per eval at most
-        for inputs_val, label_val, filename_val in validation_loader:
+        for inputs_val, label_val in validation_loader:
 
             #send to device
             inputs_val = inputs_val.to(gc.device)
