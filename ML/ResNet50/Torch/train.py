@@ -222,6 +222,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         gc.start_epoch(metadata={"epoch_num": E})
         total_io_time = 0
         power_draw = []
+        gpu_utilization = []
         with gc.profiler(f"Epoch: {E}") as prof:
             start_io = time.time_ns()
             for i, data in enumerate(train_data):
@@ -230,7 +231,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 total_io_time += time.time_ns() - start_io
                 loss = train_step(x, y, model, loss_fn, opt, train_metric, i)
                 power_draw.append(get_power())
-
+                gpu_utilization.append(torch.cuda.utilization())
                 start_io = time.time_ns()
         total_io_time *= 1e-9
 
@@ -239,6 +240,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         total_time = time.time()-start
         total_time = torch.tensor(total_time).to(gc.device)
         avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+        avg_gpu_util = torch.mean(torch.tensor(gpu_utilization, dtype=torch.float64)).to(gc.device)
+        dist.all_reduce(avg_gpu_util)
         dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
@@ -257,6 +260,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
             print(f"Total IO Time: {total_io_time}")
             if gc.device == "cuda":
                 print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
+                print(f"Avg GPU Utilization: {avg_gpu_util/gc.world_size:.2f}")
         dist.barrier()
         gc.start_eval(metadata={"epoch_num": E})
         if E % 4 == 0:

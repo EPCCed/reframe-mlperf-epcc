@@ -1,11 +1,14 @@
 device: cpu
 
 data:
-    data_dir: 
-    global_batch_size: 4
-    gradient_accumulation: 1
+    global_batch_size: 1
+    local_batch_size: 0 # change to 0 to use global_batch_size
+    train_subset: 0
+    val_subset: 0
+    gradient_accumulation_freq: -1  # -1 will automatically determine the best frequency for a 128 core cpu
+    drop_last_batch: True
     shuffle: True
-    n_epochs: 128
+    n_epochs: 4
     prefetch: 4
 
 opt:
@@ -27,4 +30,5 @@ lr_schedule:
     eta_min: 0
 
 training:
-    target_iou: 0.82  
+    target_iou: 0.82
+    num_ipus: 1

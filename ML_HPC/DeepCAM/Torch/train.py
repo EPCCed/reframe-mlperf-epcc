@@ -3,6 +3,7 @@ from pathlib import Path
 import sys
 path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
+from textwrap import indent
 import time
 from contextlib import contextmanager
 import warnings
@@ -10,10 +11,13 @@ warnings.filterwarnings("ignore")
 import click
 from packaging import version
 import copy
+import json
 
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+
+torch.backends.cudnn.benchmark
 
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext()
@@ -25,10 +29,8 @@ from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
 
 if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1:
     get_power = torch.cuda.power_draw
-    gpu_util = torch.cuda.utilization
 else:
     get_power = lambda : 0
-    gpu_util = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
     print(version.parse(torch.__version__))
 
@@ -101,6 +103,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.device == "cuda":
         torch.cuda.set_device("cuda:" + str(gc.local_rank))
     
+
     gc.log_deepcam()
 
     gc.start_init()
@@ -108,6 +111,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
 
     model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None,).to(gc.device)
+    model.to(memory_format=torch.channels_last)
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
 
@@ -148,37 +152,45 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     model.eval()
     initial_loss = criterion.forward(model.forward(torch.ones(1, 16, 768, 1152).to(gc.device)), torch.ones(1, 1, 768, 1152, dtype=torch.long).to(gc.device))
     model.train()
-    
+    if gc.rank == 0:
+        print(json.dumps(dict(gc), indent=2))
+
     gc.start_run()
 
     epoch = 0
     stop_training = False
 
-    preload = 32 # batches
+    preload = 8 # batches
     loaded = []
     model.train()
     amp_type = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     # Train Loop
     while True:
+
         data_iter = iter(copy.deepcopy(train_data))
         for _ in range(preload):
             loaded.append([x.cuda() for x in next(data_iter)])
+        
         gc.start_epoch(metadata={"epoch_num": epoch+1})
-        #train_data.sampler.set_epoch(epoch)
+        
         model.train()
         start = time.time()
         total_io_time = 0
         power_draw = []
         gpu_utilization = []
+
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
             for idx in range(len(train_data)):
                 x, y = loaded.pop(0)
+                x = x.to(memory_format=torch.channels_last)
+
                 if idx < len(train_data) - preload:
                     loaded.append([x.cuda(non_blocking=True) for x in next(data_iter)])
+
                 total_io_time += time.time_ns() - start_io    
                 power_draw.append(get_power())
-                gpu_utilization.append(gpu_util())
+                gpu_utilization.append(torch.cuda.utilization())
                 if ((idx + 1)%gc["data"]["gradient_accumulation_freq"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
@@ -201,6 +213,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     scaler.update()
                     opt.zero_grad(set_to_none=True)
                     scheduler.step()
+                torch.cuda.synchronize()
                 start_io = time.time_ns()
                     
                 if idx % 16 == 0:
@@ -243,7 +256,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
 
         
-        stop_training = validate(model, criterion, val_data, epoch)
+        stop_training = validate(model, val_data, epoch)
         gc.stop_epoch(metadata={"epoch_num": epoch+1})
         epoch += 1
 

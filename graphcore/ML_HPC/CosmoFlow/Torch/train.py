@@ -11,6 +11,7 @@ import click
 import torch 
 import torch.nn as nn
 import poptorch
+import gcipuinfo
 
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext()
@@ -40,6 +41,12 @@ class MAE:
         
         return (self._error / self._items).item()
 
+def pow_to_float(power):
+    try:
+        return float(power[:-1])
+    except ValueError:
+        return 0
+
 
 @click.command()
 @click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
@@ -49,11 +56,14 @@ def main(config):
     
     options = poptorch.Options()
     val_options = poptorch.Options()
-    options.replicationFactor(gc["training"]["num_ipus"])
+    #options.replicationFactor(gc["training"]["num_ipus"])
     options.deviceIterations(4)
+    options.Precision.setPartialsType(torch.float16)
     options.Training.gradientAccumulation(8)
     options.randomSeed(1)
-    val_options.replicationFactor(gc["training"]["num_ipus"])
+    options.TensorLocations.numIOTiles(16)
+    options.setExecutionStrategy(poptorch.ShardedExecution())
+    #val_options.replicationFactor(gc["training"]["num_ipus"])
     val_options.deviceIterations(4)
     val_options.randomSeed(1)
     torch.manual_seed(1)
@@ -62,10 +72,13 @@ def main(config):
     gc.start_init()
     gc.log_seed(1)
     
-    train_data = get_dummy_dataloader(options, 4096*4) #get_train_dataloader(options)
-    val_data = get_dummy_dataloader(val_options, 4096*4) #get_val_dataloader(val_options)
+    ipu_info = gcipuinfo.gcipuinfo()
+    dataset_size = 4096*4
+    
+    train_data = get_dummy_dataloader(options, dataset_size) #get_train_dataloader(options)
+    val_data = get_dummy_dataloader(val_options, dataset_size) #get_val_dataloader(val_options)
 
-    net = StandardCosmoFlow()
+    net = StandardCosmoFlow().to(torch.float16)
     
     if gc["opt"]["name"].upper() == "SGD":
         opt = poptorch.optim.SGD(net.parameters(), lr=gc["lr_schedule"]["base_lr"], momentum=gc["opt"]["momentum"], weight_decay=gc["opt"]["weight_decay"])
@@ -86,8 +99,20 @@ def main(config):
 
     while True:
         gc.start_epoch(metadata={"epoch_num": epoch+1})
+        start = time.time()
+        total_power = 0
         for x, y in train_data:
+            device_powers = ipu_info.getNamedAttributeForAll(gcipuinfo.IpuPower)
+            total_power += sum([pow_to_float(power) for power in device_powers if power != "N/A"])
+            x = x.to(torch.float16)
             logits, loss = model(x, y)
+        
+        total_time = time.time()-start
+        avg_power = total_power/len(train_data)
+        
+        print(f"Time For Epoch: {total_time}")
+        print(f"Processing Speed: {dataset_size/total_time}")
+        print(f"Avg IPU Usage: {avg_power}")
         
         gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
         gc.log_event(key="train_loss", value=loss.item(), metadata={"epoch_num": epoch+1})
@@ -96,6 +121,7 @@ def main(config):
         score.reset()
         avg_eval_loss = 0
         for x, y in val_data:
+            x = x.to(torch.float16)
             logits, loss = eval_model(x, y)
             avg_eval_loss += loss
             score.update(logits, y)

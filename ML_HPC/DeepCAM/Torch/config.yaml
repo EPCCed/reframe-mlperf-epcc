@@ -1,12 +1,12 @@
 device: cuda
 data:
-  data_dir: /work/z19/shared/mlperf-hpc-eleanor/deepcam/mini/deepcam-data-n512
+  data_dir: /mnt/ceph_rbd/deepcam/mini/deepcam-data-n512
   global_batch_size: 16
   local_batch_size: 4
   gradient_accumulation_freq: 1
   shuffle: true
-  n_epochs: 1
-  prefetch: 16
+  n_epochs: 4
+  prefetch: 4
 opt:
   name: Adam
   betas:
@@ -24,4 +24,4 @@ lr_schedule:
   eta_min: 0
 training:
   target_iou: 0.82
-  amp: false
+  amp: True

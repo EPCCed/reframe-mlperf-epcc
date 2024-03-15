@@ -46,18 +46,15 @@ class StandardCosmoFlow(nn.Module):
         self.criterion = nn.MSELoss()
         
     def forward(self, x, target):
-
         with poptorch.Block(ipu_id=0):
             x = self.conv_blocks[0](x)
-        with poptorch.Block(ipu_id=1):
             x = self.conv_blocks[1](x)
             x = self.conv_blocks[2](x)
-        with poptorch.Block(ipu_id=2):
+        with poptorch.Block(ipu_id=1):
             x = self.conv_blocks[3](x)
             x = self.conv_blocks[4](x)
             x = x.permute(0,2,3,4,1).flatten(1)
             
-        with poptorch.Block(ipu_id=3):
             x = F.leaky_relu(self.l1(x), negative_slope=0.3)
             if self.dropout:
                 x = self.d1(x)

@@ -27,10 +27,8 @@ from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
 
 if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1:
     get_power = torch.cuda.power_draw
-    gpu_util = torch.cuda.utilization
 else:
     get_power = lambda : 0
-    gpu_util = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
     print(version.parse(torch.__version__))
 
@@ -120,7 +118,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.rank == -1:
         train_data = tqdm(train_data, miniters=64, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
 
-    model = StandardCosmoFlow().to(gc.device)
+    model = torch.jit.script(StandardCosmoFlow()).to(gc.device)
     if gc.world_size > 1:
         model = nn.parallel.DistributedDataParallel(model)
     
@@ -139,7 +137,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     score = DistributedMAE()
     epoch= 0
 
-    preload = 32 # batches
+    preload = 8 # batches
     loaded = []
     print(len(train_data))
     while True:
@@ -160,7 +158,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     loaded.append([x.cuda(non_blocking=True) for x in next(data_iter)])
                 total_io_time += time.time_ns() - start_io
                 power_draw.append(get_power())
-                gpu_utilization.append(gpu_util())
+                gpu_utilization.append(torch.cuda.utilization())
                 if idx%gc["data"]["gradient_accumulation_freq"] != 0:
                     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                         with model.no_sync():

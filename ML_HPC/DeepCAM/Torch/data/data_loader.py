@@ -229,3 +229,35 @@ def get_dataloaders():
     validation_size = validation_set.global_size    
         
     return train_loader, train_size, validation_loader, validation_size
+
+if __name__ == "__main__":
+    import time
+    from tqdm import tqdm
+    gc.update_config("/workspace/ML_HPC/DeepCAM/Torch/config.yaml")
+    gc.init_dist()
+    train_loader, train_size, validation_loader, validation_size = get_dataloaders()
+    
+    train_loader = tqdm(train_loader)
+ 
+    
+    for E in range(gc["data"]["n_epochs"]):
+        start = time.time()
+        iter_time = 0
+        host_to_dev_time = 0
+    
+        i = 0
+    
+        t0 = time.time_ns()
+        
+        for x, y in train_loader:
+            t1 = time.time_ns()
+            x, y = x.cuda(), y.cuda()
+            torch.cuda.synchronize()
+            iter_time += t1 - t0
+            host_to_dev_time += time.time_ns() - t1
+            t0 = time.time_ns()
+
+            i+=1
+        print(f"Total Time: {time.time()- start}")
+        print(f"Iterable Time: {iter_time*1e-9}")
+        print(f"Host To Device Time: {host_to_dev_time*1e-9}")
