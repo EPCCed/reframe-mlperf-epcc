@@ -47,6 +47,7 @@ srun --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:1 --account=
 source $PREFIX/miniconda/bin/activate build-torch
 export USE_ROCM=0
 export BUILD_TEST=0
+export BUILD_CAFFE2=0
 export CMAKE_PREFIX_PATH=${CONDA_PREFIX:-"$(dirname $(which conda))/../"}
 export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
 export PATH=$CONDA_PREFIX/bin:$PATH
@@ -56,7 +57,7 @@ export CUDA_HOME=$CONDA_PREFIX
 export LDFLAGS=-L/$CONDA_PREFIX/lib
 module unload cmake
 module swap gcc gcc/10.2.0
-module load openmpi/4.1.5-cuda-11.6
+module load openmpi/4.1.6-cuda-11.6
 #cd into pytorch if not already
 python setup.py develop
 ```

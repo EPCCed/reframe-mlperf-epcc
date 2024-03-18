@@ -265,7 +265,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         gc.start_eval(metadata={"epoch_num": E})
         if E % 4 == 0:
             for x, y in val_data:
-                loss = valid_step(x, y, model, loss_fn, val_metric)
+                loss = valid_step(x.to(gc.device), y.to(gc.device), model, loss_fn, val_metric)
             val_accuracy = val_metric.compute().to(gc.device)
             dist.all_reduce(val_accuracy)
             if gc.rank == 0 and gc["training"]["benchmark"]:

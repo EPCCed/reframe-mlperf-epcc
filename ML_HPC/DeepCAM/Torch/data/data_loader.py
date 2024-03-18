@@ -247,6 +247,7 @@ if __name__ == "__main__":
     
         i = 0
     
+    
         t0 = time.time_ns()
         
         for x, y in train_loader:
