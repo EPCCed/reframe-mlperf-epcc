@@ -23,11 +23,16 @@ from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
 
 
-if version.parse(torch.__version__) < version.parse("2.1.0"):
+if version.parse(torch.__version__) < version.parse("2.1.0") or not torch.cuda.is_available():
     get_power = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
 else:
     get_power = torch.cuda.power_draw
+
+if torch.cuda.is_available():
+    get_util = torch.cuda.utilization
+else:
+    get_util = lambda : 0
 
 def train_step(x, y, model, loss_fn, opt, metric_tracker, batch_idx):
     if (batch_idx+1)% gc["data"]["gradient_accumulation_freq"] != 0:
@@ -231,7 +236,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 total_io_time += time.time_ns() - start_io
                 loss = train_step(x, y, model, loss_fn, opt, train_metric, i)
                 power_draw.append(get_power())
-                gpu_utilization.append(torch.cuda.utilization())
+                gpu_utilization.append(get_util())
                 start_io = time.time_ns()
         total_io_time *= 1e-9
 

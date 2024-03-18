@@ -25,13 +25,17 @@ import ML_HPC.CosmoFlow.Torch.data.TF_record_loader as TF_rl
 import ML_HPC.CosmoFlow.Torch.data.h5_dataloader as h5_dl
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
 
-if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1:
+if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available():
     get_power = torch.cuda.power_draw
 else:
     get_power = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
     print(version.parse(torch.__version__))
 
+if torch.cuda.is_available():
+    get_util = torch.cuda.utilization
+else:
+    get_util = lambda : 0
 
 #Mean Absolute Error
 class DistributedMAE:
@@ -158,7 +162,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     loaded.append([x.cuda(non_blocking=True) for x in next(data_iter)])
                 total_io_time += time.time_ns() - start_io
                 power_draw.append(get_power())
-                gpu_utilization.append(torch.cuda.utilization())
+                gpu_utilization.append(get_util())
                 if idx%gc["data"]["gradient_accumulation_freq"] != 0:
                     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                         with model.no_sync():
