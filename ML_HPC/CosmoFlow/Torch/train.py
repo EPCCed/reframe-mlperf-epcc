@@ -122,7 +122,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.rank == -1:
         train_data = tqdm(train_data, miniters=64, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
 
-    model = StandardCosmoFlow().to(gc.device)
+    model = StandardCosmoFlow().to(gc.device).to(torch.half)
     if gc.world_size > 1:
         model = nn.parallel.DistributedDataParallel(model)
     
@@ -141,25 +141,20 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     score = DistributedMAE()
     epoch= 0
 
-    preload = 8 # batches
-    loaded = []
     print(len(train_data))
     while True:
         model.train()
         gc.start_epoch(metadata={"epoch_num": epoch+1})
-        data_iter = iter(copy.deepcopy(train_data))
-        for _ in range(preload):
-            loaded.append([x.cuda() for x in next(data_iter)])
+
         start = time.time()
         power_draw = []
         gpu_utilization = []
         total_io_time = 0
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
-            for idx in range(len(train_data)):
-                x, y = loaded.pop(0)
-                if idx < len(train_data) - preload:
-                    loaded.append([x.cuda(non_blocking=True) for x in next(data_iter)])
+            for idx, (x, y) in enumerate(train_data):
+                x, y = x.to(gc.device).to(torch.half), y.to(gc.device).to(torch.half)
+                
                 total_io_time += time.time_ns() - start_io
                 power_draw.append(get_power())
                 gpu_utilization.append(get_util())

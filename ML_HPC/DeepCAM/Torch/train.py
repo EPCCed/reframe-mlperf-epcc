@@ -115,7 +115,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
 
     model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None,).to(gc.device)
-    model.to(memory_format=torch.channels_last)
+
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
 
@@ -164,8 +164,6 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     epoch = 0
     stop_training = False
 
-    preload = 8 # batches
-    loaded = []
     model.train()
     if torch.cuda.is_available():
         amp_type = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
@@ -173,10 +171,6 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         amp_type = torch.float16
     # Train Loop
     while True:
-
-        data_iter = iter(copy.deepcopy(train_data))
-        for _ in range(preload):
-            loaded.append([x.cuda() for x in next(data_iter)])
         
         gc.start_epoch(metadata={"epoch_num": epoch+1})
         
@@ -188,12 +182,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
 
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
-            for idx in range(len(train_data)):
-                x, y = loaded.pop(0)
-                x = x.to(memory_format=torch.channels_last)
-
-                if idx < len(train_data) - preload:
-                    loaded.append([x.cuda(non_blocking=True) for x in next(data_iter)])
+            for idx, (x, y) in enumerate(train_data):
+                x, y = x.to(gc.device), y.to(gc.device)
 
                 total_io_time += time.time_ns() - start_io    
                 power_draw.append(get_power())
