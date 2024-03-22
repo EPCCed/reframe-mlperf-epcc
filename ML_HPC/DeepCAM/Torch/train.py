@@ -167,7 +167,10 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     preload = 8 # batches
     loaded = []
     model.train()
-    amp_type = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    if torch.cuda.is_available():
+        amp_type = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    else:
+        amp_type = torch.float16
     # Train Loop
     while True:
 
