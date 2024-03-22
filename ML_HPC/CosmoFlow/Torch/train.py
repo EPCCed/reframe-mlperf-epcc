@@ -122,7 +122,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.rank == -1:
         train_data = tqdm(train_data, miniters=64, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
 
-    model = StandardCosmoFlow().to(gc.device).to(torch.half)
+    model = StandardCosmoFlow().to(gc.device)
     if gc.world_size > 1:
         model = nn.parallel.DistributedDataParallel(model)
     
@@ -153,7 +153,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
             for idx, (x, y) in enumerate(train_data):
-                x, y = x.to(gc.device).to(torch.half), y.to(gc.device).to(torch.half)
+                x, y = x.to(gc.device), y.to(gc.device)
                 
                 total_io_time += time.time_ns() - start_io
                 power_draw.append(get_power())

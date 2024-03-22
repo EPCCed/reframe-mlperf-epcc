@@ -2,15 +2,15 @@ device: cpu
 
 data:
     data_dir: /work/z043//shared/imagenet-1k/huggingface/data
-    global_batch_size: 128
-    local_batch_size: 32 # change to 0 to use global_batch_size
-    train_subset: 100000
-    val_subset: 500
+    global_batch_size: 32
+    local_batch_size: 1 # change to 0 to use global_batch_size
+    train_subset: 2048
+    val_subset: 512
     gradient_accumulation_freq: 1
     drop_last_batch: True
     shuffle: True
-    n_epochs: 1
-    prefetch: 64
+    n_epochs: 10
+    prefetch: 32
 
 opt:
     name: SGD
@@ -25,4 +25,4 @@ lr_schedule:
 
 training:
     target_accuracy: 0.759
-    benchmark: False
+    benchmark: True

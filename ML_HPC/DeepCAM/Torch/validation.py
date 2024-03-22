@@ -44,13 +44,13 @@ def compute_score(prediction: torch.Tensor, gt: torch.Tensor, num_classes: int) 
         return iout
 
 
-def validate(net, validation_loader, epoch):
+def validate(net, criterion, validation_loader, epoch):
     #eval
     gc.start_eval(metadata={"epoch": epoch+1})
 
-    count_sum_val = torch.zeros((1), dtype=torch.float32)
-    loss_sum_val = torch.zeros((1), dtype=torch.float32)
-    iou_sum_val = torch.zeros((1), dtype=torch.float32)
+    count_sum_val = torch.zeros((1), dtype=torch.float32).to(gc.device)
+    loss_sum_val = torch.zeros((1), dtype=torch.float32).to(gc.device)
+    iou_sum_val = torch.zeros((1), dtype=torch.float32).to(gc.device)
 
     # disable gradients
     with torch.no_grad():
@@ -65,7 +65,8 @@ def validate(net, validation_loader, epoch):
             label_val = label_val.to(gc.device)
             
             # forward pass
-            outputs_val, loss_val = net(inputs_val, label_val)
+            outputs_val = net(inputs_val)
+            loss_val = criterion(outputs_val, label_val)
 
             # accumulate loss
             loss_sum_val += loss_val

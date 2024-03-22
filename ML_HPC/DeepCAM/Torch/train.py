@@ -168,7 +168,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if torch.cuda.is_available():
         amp_type = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
     else:
-        amp_type = torch.float16
+        amp_type = torch.bfloat16
     # Train Loop
     while True:
         
@@ -210,7 +210,6 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     scaler.update()
                     opt.zero_grad(set_to_none=True)
                     scheduler.step()
-                torch.cuda.synchronize()
                 start_io = time.time_ns()
                     
                 if idx % 16 == 0:
@@ -253,7 +252,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
 
         
-        stop_training = validate(model, val_data, epoch)
+        stop_training = validate(model, criterion, val_data, epoch)
         gc.stop_epoch(metadata={"epoch_num": epoch+1})
         epoch += 1
 
