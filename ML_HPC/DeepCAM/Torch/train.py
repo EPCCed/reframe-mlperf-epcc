@@ -27,14 +27,14 @@ from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, Cosi
 from ML_HPC.DeepCAM.Torch.optimizer.lamb import Lamb
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
 
-if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available():
+if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available() and torch.version.cuda:
     get_power = torch.cuda.power_draw
 else:
     get_power = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
     print(version.parse(torch.__version__))
 
-if torch.cuda.is_available():
+if torch.cuda.is_available() and torch.version.cuda:
     get_util = torch.cuda.utilization
 else:
     get_util = lambda : 0

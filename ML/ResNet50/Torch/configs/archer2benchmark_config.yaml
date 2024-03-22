@@ -4,13 +4,13 @@ data:
     data_dir: /work/ta127/shared/imagenet-1k/data
     global_batch_size: 32
     local_batch_size: 1 # change to 0 to use global_batch_size
-    train_subset: 0
+    train_subset: 131072
     val_subset: 0
     gradient_accumulation_freq: 1  # -1 will automatically determine the best frequency for a 128 core cpu
     drop_last_batch: True
     shuffle: True
-    n_epochs: 4
-    prefetch: 64
+    n_epochs: 1
+    prefetch: 32
 
 opt:
     name: SGD
@@ -25,4 +25,4 @@ lr_schedule:
 
 training:
     target_accuracy: 0.759
-    benchmark: False
+    benchmark: True

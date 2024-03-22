@@ -25,14 +25,14 @@ import ML_HPC.CosmoFlow.Torch.data.TF_record_loader as TF_rl
 import ML_HPC.CosmoFlow.Torch.data.h5_dataloader as h5_dl
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
 
-if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available():
+if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available() and torch.version.cuda:
     get_power = torch.cuda.power_draw
 else:
     get_power = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
     print(version.parse(torch.__version__))
 
-if torch.cuda.is_available():
+if torch.cuda.is_available() and torch.version.cuda:
     get_util = torch.cuda.utilization
 else:
     get_util = lambda : 0
@@ -122,7 +122,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.rank == -1:
         train_data = tqdm(train_data, miniters=64, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
 
-    model = torch.jit.script(StandardCosmoFlow()).to(gc.device)
+    model = StandardCosmoFlow().to(gc.device)
     if gc.world_size > 1:
         model = nn.parallel.DistributedDataParallel(model)
     

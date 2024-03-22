@@ -46,7 +46,7 @@ def main(config):
     options = poptorch.Options()
     val_options = poptorch.Options()
     options.replicationFactor(gc["training"]["num_ipus"])
-    options.deviceIterations(4)
+    options.deviceIterations(1024)
     options.Training.gradientAccumulation(4)
     val_options.replicationFactor(gc["training"]["num_ipus"])
     
@@ -55,8 +55,8 @@ def main(config):
     options.randomSeed(1)
     torch.manual_seed(1)
 
-    train_data = dl.get_dummy_dataloader(options, 2**16)
-    val_data = dl.get_dummy_dataloader(val_options, 50000)
+    train_data = dl.get_train_dataloader(options)
+    val_data = dl.get_val_dataloader(val_options)
 
     net = ResNet50(num_classes=1000)
     net.train()
@@ -102,11 +102,11 @@ def main(config):
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
         print(f"Train Accuracy at Epoch {E}: {train_accuracy}")
+        dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1281167
+        print(f"Processing Speed: {(dataset_size/total_time).item()}")
         print(f"Time For Epoch: {total_time}")
         print(f"Train Loss at Epoch {E}: {loss}")
-        dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 2**16
-        print(f"Processing Speed: {(dataset_size/total_time).item()}")
-        print(f"Avg IPU Usage: {avg_power}")
+        print(f"Avg IPU Power Usage: {avg_power}")
         print("\n")
 
         if E % 4 == 0:

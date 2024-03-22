@@ -16,7 +16,7 @@ def main(files, base):
         os.system(f"mv {os.path.join(base, file)} {os.path.join(base, img_class)}")
 
 if __name__ == "__main__":
-    base = "/work/ta127/shared/imagenet-1k/data/train"
+    base = "/home/eidf095/eidf095/crae-ml/imagenet-1k/data/train"
     base_files = os.listdir(base)
     base_files.sort()
     n = 8

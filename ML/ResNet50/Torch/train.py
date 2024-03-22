@@ -29,7 +29,7 @@ if version.parse(torch.__version__) < version.parse("2.1.0") or not torch.cuda.i
 else:
     get_power = torch.cuda.power_draw
 
-if torch.cuda.is_available():
+if torch.cuda.is_available() and torch.version.cuda:
     get_util = torch.cuda.utilization
 else:
     get_util = lambda : 0
@@ -250,7 +250,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
         dist.all_reduce(total_time)
         total_time /= gc.world_size
-        if gc.rank == 0 and gc["training"]["benchmark"]:
+        if gc.rank == 0:
             if E == 1:
                 print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
                 
