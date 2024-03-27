@@ -154,7 +154,7 @@ class CamDataset(Dataset):
 def get_train_dataloader(params):
     params = params["train_input"]
     train_set = CamDataset(params["data_dir"], 
-                           statsfile = os.path.join(gc["data"]["data_dir"], 'stats.h5'),
+                           statsfile = os.path.join(params["data"]["data_dir"], 'stats.h5'),
                            channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
                            allow_uneven_distribution = False,
                            shuffle = True, 
@@ -176,7 +176,7 @@ def get_train_dataloader(params):
 def get_eval_dataloader(params):
     params = params["train_input"]
     validation_set = CamDataset(params["data_dir"], 
-                                statsfile = os.path.join(gc["data"]["data_dir"], 'stats.h5'),
+                                statsfile = os.path.join(params["data"]["data_dir"], 'stats.h5'),
                                 channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
                                 allow_uneven_distribution = True,
                                 shuffle = False,

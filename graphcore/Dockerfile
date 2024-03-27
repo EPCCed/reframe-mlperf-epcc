@@ -4,5 +4,6 @@ RUN pip install torchmetrics
 RUN pip install "git+https://github.com/mlperf/logging.git"
 RUN pip install click
 RUN pip install tfrecord
+RUN pip install h5py
 
 COPY . .

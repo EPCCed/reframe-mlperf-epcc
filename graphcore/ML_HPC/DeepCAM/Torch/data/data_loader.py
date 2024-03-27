@@ -26,6 +26,7 @@ import h5py as h5
 import numpy as np
 
 import torch
+import poptorch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data import DistributedSampler
@@ -168,8 +169,24 @@ def get_datashapes():
     return peek_shapes_hdf5(os.path.join(gc["data"]["data_dir"], "train"))
 
 
-def get_dataloaders():
-    # import only what we need
+def get_dataloaders(train_options, val_options):
+    local_bs = gc["data"]["global_batch_size"] // gc.world_size
+    if gc["data"]["gradient_accumulation_freq"] == -1:
+        if local_bs > 64:
+            gc["data"]["gradient_accumulation_freq"] = local_bs // 64
+
+            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+        else:
+            gc["data"]["gradient_accumulation_freq"] = 1
+    else:
+        local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+    
+    if gc["data"]["local_batch_size"]:
+        gc["data"]["gradient_accumulation_freq"] = 1
+        local_bs = gc["data"]["local_batch_size"]
+        gc["data"]["global_batch_size"] = gc.world_size * local_bs
+    
+    
     train_dir = os.path.join(gc["data"]["data_dir"], "train")
     train_set = CamDataset(train_dir, 
                            statsfile = os.path.join(gc["data"]["data_dir"], 'stats.h5'),
@@ -180,11 +197,13 @@ def get_dataloaders():
                            comm_size = 1,
                            comm_rank = 0)
     
-    distributed_train_sampler = DistributedSampler(train_set,
-                                                   num_replicas = gc.world_size,
-                                                   rank = gc.rank,
-                                                   shuffle = True,
-                                                   drop_last = True)
+    train_loader = poptorch.DataLoader(options=train_options,
+                                       dataset=train_set,
+                                        batch_size = local_bs,
+                                        shuffle=gc["data"]["shuffle"],
+                                        num_workers=1,
+                                        drop_last=True
+                                        )
     
     train_loader = DataLoader(train_set,
                               batch_size=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"],
@@ -207,7 +226,7 @@ def get_dataloaders():
                                 comm_rank = gc.rank)
     
     # use batch size = 1 here to make sure that we do not drop a sample
-    validation_loader = DataLoader(validation_set,
+    validation_loader = poptorch.DataLoader(options=val_options,
                                    batch_size=1,
                                    num_workers = 1,
                                    pin_memory = True if gc.device != "cpu" else False,
@@ -218,35 +237,46 @@ def get_dataloaders():
         
     return train_loader, train_size, validation_loader, validation_size
 
-def get_dummy_dataloaders(n_samples):
+def get_dummy_dataloaders(n_samples, train_options, val_options):
+    
+    local_bs = gc["data"]["global_batch_size"] // gc.world_size
+    if gc["data"]["gradient_accumulation_freq"] == -1:
+        if local_bs > 128:
+            gc["data"]["gradient_accumulation_freq"] = local_bs // 128
+            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+        else:
+            gc["data"]["gradient_accumulation_freq"] = 1
+    
+    if gc["data"]["local_batch_size"]:
+        gc["data"]["gradient_accumulation_freq"] = 1
+        local_bs = gc["data"]["local_batch_size"]
+        gc["data"]["global_batch_size"] = gc.world_size * local_bs
+    
     train_set = DummyDataset(n_samples=n_samples)
     
-    distributed_train_sampler = DistributedSampler(train_set,
-                                                   num_replicas = gc.world_size,
-                                                   rank = gc.rank,
-                                                   shuffle = True,
-                                                   drop_last = True)
+    train_loader = poptorch.DataLoader(
+                    options=train_options,
+                    dataset=train_set, 
+                    batch_size = local_bs,
+                    shuffle = gc["data"]["shuffle"],
+                    num_workers=1,
+                    drop_last = gc["data"]["drop_last_batch"]
+                    )
     
-    train_loader = DataLoader(train_set,
-                              batch_size=gc["data"]["global_batch_size"] // gc.world_size//gc["data"]["gradient_accumulation"],
-                              num_workers =1,
-                              sampler = distributed_train_sampler,
-                              pin_memory = True if gc.device != "cpu" else False,
-                              drop_last = True,
-                              prefetch_factor=gc["data"]["prefetch"])
-
     train_size = 0
 
     validation_set = DummyDataset(n_samples=n_samples)
     
     # use batch size = 1 here to make sure that we do not drop a sample
-    validation_loader = DataLoader(validation_set,
-                                   batch_size=1,
-                                   num_workers = 1,
-                                   pin_memory = True if gc.device != "cpu" else False,
-                                   drop_last = False,
-                                   prefetch_factor=gc["data"]["prefetch"])
+    validation_loader = poptorch.DataLoader(
+                    options=val_options,
+                    dataset=train_set, 
+                    batch_size = 1,
+                    shuffle = gc["data"]["shuffle"],
+                    num_workers=1,
+                    drop_last = gc["data"]["drop_last_batch"]
+                    )
     
-    validation_size = 0   
+    validation_size = 0
         
     return train_loader, train_size, validation_loader, validation_size

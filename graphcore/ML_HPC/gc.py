@@ -86,7 +86,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             self.mllogger.event(key="scheduler_t_max", value=self["lr_schedule"]["t_max"])
             self.mllogger.event(key="scheduler_eta_min", value=self["lr_schedule"]["eta_min"])
         
-        self.mllogger.event(key="gradient_accumulation_frequency", value=self["data"]["gradient_accumulation"])
+        self.mllogger.event(key="gradient_accumulation_frequency", value=self["data"]["gradient_accumulation_freq"])
 
     def print_0(self, *args, **kwargs):
         print(*args, **kwargs)

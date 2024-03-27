@@ -47,11 +47,10 @@ def compute_score(prediction: torch.Tensor, gt: torch.Tensor, num_classes: int) 
 def validate(net, criterion, validation_loader, epoch):
     #eval
     gc.start_eval(metadata={"epoch": epoch+1})
-    net.eval()
 
-    count_sum_val = torch.zeros((1), dtype=torch.float32, device=gc.device)
-    loss_sum_val = torch.zeros((1), dtype=torch.float32, device=gc.device)
-    iou_sum_val = torch.zeros((1), dtype=torch.float32, device=gc.device)
+    count_sum_val = torch.zeros((1), dtype=torch.float32).to(gc.device)
+    loss_sum_val = torch.zeros((1), dtype=torch.float32).to(gc.device)
+    iou_sum_val = torch.zeros((1), dtype=torch.float32).to(gc.device)
 
     # disable gradients
     with torch.no_grad():
@@ -59,14 +58,14 @@ def validate(net, criterion, validation_loader, epoch):
         # iterate over validation sample
         step_val = 0
         # only print once per eval at most
-        for inputs_val, label_val, filename_val in validation_loader:
+        for inputs_val, label_val in validation_loader:
 
             #send to device
             inputs_val = inputs_val.to(gc.device)
             label_val = label_val.to(gc.device)
             
             # forward pass
-            outputs_val = net.forward(inputs_val)
+            outputs_val = net(inputs_val)
             loss_val = criterion(outputs_val, label_val)
 
             # accumulate loss
@@ -84,10 +83,6 @@ def validate(net, criterion, validation_loader, epoch):
             step_val += 1
                 
         # average the validation loss
-        if dist.is_initialized():
-            dist.all_reduce(count_sum_val, op=dist.ReduceOp.SUM, async_op=False)
-            dist.reduce(loss_sum_val, dst=0, op=dist.ReduceOp.SUM)
-            dist.all_reduce(iou_sum_val, op=dist.ReduceOp.SUM, async_op=False)
         loss_avg_val = loss_sum_val.item() / count_sum_val.item()
         iou_avg_val = iou_sum_val.item() / count_sum_val.item()
 
@@ -101,6 +96,5 @@ def validate(net, criterion, validation_loader, epoch):
 
     # set to train
     gc.stop_eval(metadata={"epoch": epoch+1})
-    net.train()
     
     return stop_training

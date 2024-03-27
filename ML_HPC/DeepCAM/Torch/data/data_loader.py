@@ -123,9 +123,6 @@ class CamDataset(Dataset):
         self.data_shift = np.reshape( data_shift, (1, 1, data_shift.shape[0]) ).astype(np.float32)
         self.data_scale = np.reshape( data_scale, (1, 1, data_scale.shape[0]) ).astype(np.float32)
 
-
-
-
     def __len__(self):
         return self.local_size
 
@@ -139,13 +136,9 @@ class CamDataset(Dataset):
         filename = os.path.join(self.source, self.files[idx])
 
         #load data and project
-        with h5.File(filename, "r") as f:
-            try:
-                data = f["climate"]["data"][..., self.channels]
-                label = f["climate"]["labels_0"][...].astype(np.int64)
-            except Exception as e:
-                print(filename, "\n\n")
-                raise e
+        with h5.File(filename, "r", rdcc_nbytes=1048576*50, rdcc_nslots=16) as f:
+            data = f["climate"]["data"][..., self.channels]
+            label = f["climate"]["labels_0"][...].astype(np.int64)
         
         #preprocess
         data = self.data_scale * (data - self.data_shift)
@@ -154,7 +147,7 @@ class CamDataset(Dataset):
             #transpose to NCHW
             data = np.transpose(data, (2,0,1))
         
-        return data, label, filename
+        return torch.from_numpy(data), torch.from_numpy(label)
 
 class DummyDataset(Dataset):
     def __init__(self, n_samples):
@@ -164,7 +157,7 @@ class DummyDataset(Dataset):
         return self.n_samples
 
     def __getitem__(self, idx):
-        return torch.ones(16, 768, 1152),  torch.ones(3, 768, 1152), "file.txt"
+        return torch.ones(16, 768, 1152).to(gc.device),  torch.ones(3, 768, 1152).to(gc.device), "file.txt"
 
 
 def get_datashapes():
@@ -172,6 +165,22 @@ def get_datashapes():
 
 
 def get_dataloaders():
+    local_bs = gc["data"]["global_batch_size"] // gc.world_size
+    if gc["data"]["gradient_accumulation_freq"] == -1:
+        if local_bs > 64:
+            gc["data"]["gradient_accumulation_freq"] = local_bs // 64
+
+            local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+        else:
+            gc["data"]["gradient_accumulation_freq"] = 1
+    else:
+        local_bs = local_bs // gc["data"]["gradient_accumulation_freq"]
+    
+    if gc["data"]["local_batch_size"]:
+        gc["data"]["gradient_accumulation_freq"] = 1
+        local_bs = gc["data"]["local_batch_size"]
+        gc["data"]["global_batch_size"] = gc.world_size * local_bs
+    
     # import only what we need
     train_dir = os.path.join(gc["data"]["data_dir"], "train")
     train_set = CamDataset(train_dir, 
@@ -190,12 +199,12 @@ def get_dataloaders():
                                                    drop_last = True)
     
     train_loader = DataLoader(train_set,
-                              batch_size=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"],
+                              batch_size=local_bs,
                               num_workers =4,
                               sampler = distributed_train_sampler,
                               pin_memory = True if gc.device != "cpu" else False,
                               drop_last = True,
-                              prefetch_factor=gc["data"]["prefetch"])
+    prefetch_factor=gc["data"]["prefetch"])
 
     train_size = train_set.global_size
 
@@ -212,11 +221,44 @@ def get_dataloaders():
     # use batch size = 1 here to make sure that we do not drop a sample
     validation_loader = DataLoader(validation_set,
                                    batch_size=1,
-                                   num_workers = 4,
+                                   num_workers = 8,
                                    pin_memory = True if gc.device != "cpu" else False,
                                    drop_last = False,
-                                   prefetch_factor=gc["data"]["prefetch"])
+    prefetch_factor=gc["data"]["prefetch"])
     
     validation_size = validation_set.global_size    
         
     return train_loader, train_size, validation_loader, validation_size
+
+if __name__ == "__main__":
+    import time
+    from tqdm import tqdm
+    gc.update_config("/workspace/ML_HPC/DeepCAM/Torch/config.yaml")
+    gc.init_dist()
+    train_loader, train_size, validation_loader, validation_size = get_dataloaders()
+    
+    train_loader = tqdm(train_loader)
+ 
+    
+    for E in range(gc["data"]["n_epochs"]):
+        start = time.time()
+        iter_time = 0
+        host_to_dev_time = 0
+    
+        i = 0
+    
+    
+        t0 = time.time_ns()
+        
+        for x, y in train_loader:
+            t1 = time.time_ns()
+            x, y = x.cuda(), y.cuda()
+            torch.cuda.synchronize()
+            iter_time += t1 - t0
+            host_to_dev_time += time.time_ns() - t1
+            t0 = time.time_ns()
+
+            i+=1
+        print(f"Total Time: {time.time()- start}")
+        print(f"Iterable Time: {iter_time*1e-9}")
+        print(f"Host To Device Time: {host_to_dev_time*1e-9}")

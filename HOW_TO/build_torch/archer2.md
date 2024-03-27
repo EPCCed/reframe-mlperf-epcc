@@ -48,7 +48,8 @@ python setup.py develop
 git clone --single-branch --branch release/0.15 https://github.com/pytorch/vision.git
 conda install libpng libjpeg-turbo
 pip install expecttest flake8 typing mypy pytest pytest-mock scipy pillow
-srun --exclusive --nodes=1 --time=01:30:00 --partition=gpu --qos=gpu --gres=gpu:1 --account=[CODE] --pty /usr/bin/bash --login
+srun --nodes=1 --time=01:30:00 --partition=standard --qos=standard --account=[CODE] --pty /usr/bin/bash --login
+module load PrgEnv-gnu
 source $PREFIX/miniconda/bin/activate mlperf-torch
 module unload cmake
 cd vision

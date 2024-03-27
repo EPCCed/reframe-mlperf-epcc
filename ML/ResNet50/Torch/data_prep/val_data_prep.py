@@ -3,7 +3,7 @@ import os
 from tqdm import tqdm
 
 def main():
-    base = "/work/ta127/shared/imagenet-1k/data/val"
+    base = "/home/eidf095/eidf095/crae-ml/imagenet-1k/data/val"
     base_files = os.listdir(base)
     dirs = list([i for i in base_files if "." not in i])
     files = list([i for i in base_files if "." in i])

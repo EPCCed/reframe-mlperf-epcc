@@ -28,6 +28,8 @@ conda install anaconda::ncurses
 conda install -c conda-forge ncurses
 ```
 
+
+
 # Build Pytorch
 ```bash
 srun --gpus=1 --time=01:00:00 --partition=gpu --qos=gpu-shd --account=[CODE] --pty /bin/bash
@@ -50,7 +52,9 @@ export BUILD_CAFFE2=0
 export BUILD_TEST=0
 export PYTORCH_ROCM_ARCH=gfx90a
 export BUILD_CAFFE2_OPS=0
-export LDFLAGS=-L/$CONDA_PREFIX/lib
+export LDFLAGS="-L/$CONDA_PREFIX/lib -L${CRAY_MPICH_DIR}/lib ${PE_MPICH_GTL_DIR_amd_gfx90a}"
+export CXXFLAGS=-I${CRAY_MPICH_DIR}/include
+export LIBS="-lmpi ${PE_MPICH_GTL_LIBS_amd_gfx90a}"
 python tools/amd_build/build_amd.py
 python setup.py develop
 # to re-build run: python setup.py clean 

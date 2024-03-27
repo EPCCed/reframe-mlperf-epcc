@@ -1,18 +1,23 @@
 import os
 from pathlib import Path
 import sys
-path_root = Path(__file__).parents[3]
+path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
+from textwrap import indent
 import time
 from contextlib import contextmanager
 import warnings
 warnings.filterwarnings("ignore")
 import click
 from packaging import version
+import copy
+import json
 
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+
+torch.backends.cudnn.benchmark
 
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext()
@@ -22,12 +27,17 @@ from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, Cosi
 from ML_HPC.DeepCAM.Torch.optimizer.lamb import Lamb
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
 
-if version.parse(torch.__version__) < version.parse("2.1.0"):
+if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available() and torch.version.cuda:
+    get_power = torch.cuda.power_draw
+else:
     get_power = lambda : 0
     print("Torch Version Too Low for GPU Power Metrics")
-else:
-    get_power = torch.cuda.power_draw
+    print(version.parse(torch.__version__))
 
+if torch.cuda.is_available() and torch.version.cuda:
+    get_util = torch.cuda.utilization
+else:
+    get_util = lambda : 0
 
 class CELoss(nn.Module):
 
@@ -58,8 +68,11 @@ def dummy_loaders(n_samples):
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
+    if prof is None:
+        return total_time
+    backend = "mpi:" if dist.get_backend() == "mpi" else "nccl:"
     for event in list(prof.key_averages()):
-        if "mpi:" in event.key or "nccl" in event.key:
+        if backend in event.key:
             total_time += event.cpu_time_total * 1e-6
             total_time += event.cuda_time_total * 1e-6
     return total_time
@@ -67,25 +80,25 @@ def get_comm_time(prof: torch.profiler.profile):
 @click.command()
 @click.option("--device", "-d", default="", show_default=True, type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default=os.path.join(os.getcwd(), "config.yaml"), show_default=True, type=str, help="Path to config.yaml. If not provided will default to config.yaml in the cwd")
-@click.option("--data-dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
+@click.option("--data_dir", default=None, show_default=True, type=str, help="Path To DeepCAM dataset. If not provided will deafault to what is provided in the config.yaml")
 @click.option("--global_batchsize", "-gbs", default=None, show_default=True, type=int, help="The Global Batchsize")
-@click.option("--local_batchsize", "-lbs", default=0, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
-@click.option("--t_subset_size", default=0, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
-@click.option("--v_subset_size", default=0, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
+@click.option("--local_batchsize", "-lbs", default=None, show_default=True, type=int, help="The Local Batchsize, Leave as 0 to use the Global Batchsize")
+@click.option("--t_subset_size", default=None, show_default=True, type=int, help="Size of the Training Subset, dont call to use full dataset")
+@click.option("--v_subset_size", default=None, show_default=True, type=int, help="Size of the Validation Subset, dont call to use full dataset")
 def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_size, v_subset_size):
     if config:
         gc.update_config(config)
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
+    if device.lower() in ('cpu', "gpu", "cuda"):
         gc["device"] = device.lower()
     if data_dir:
         gc["data"]["data_dir"] = data_dir
-    if global_batchsize:
+    if global_batchsize is not None:
         gc["data"]["global_batch_size"] = global_batchsize
-    if local_batchsize:
+    if local_batchsize is not None:
         gc["data"]["local_batch_size"]= local_batchsize
-    if t_subset_size:
+    if t_subset_size is not None:
         gc["data"]["train_subset"] = t_subset_size
-    if v_subset_size:
+    if v_subset_size is not None:
         gc["data"]["val_subset"] = v_subset_size
 
     
@@ -94,6 +107,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.device == "cuda":
         torch.cuda.set_device("cuda:" + str(gc.local_rank))
     
+
     gc.log_deepcam()
 
     gc.start_init()
@@ -101,6 +115,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
 
     model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None,).to(gc.device)
+
     if gc.world_size > 1:
         model = torch.nn.parallel.DistributedDataParallel(model)
 
@@ -137,62 +152,86 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     scaler = torch.cuda.amp.grad_scaler.GradScaler(enabled=gc["training"]["amp"] and gc.device == "cuda")
     
     gc.stop_init()
+    
+    model.eval()
+    initial_loss = criterion.forward(model.forward(torch.ones(1, 16, 768, 1152).to(gc.device)), torch.ones(1, 1, 768, 1152, dtype=torch.long).to(gc.device))
+    model.train()
+    if gc.rank == 0:
+        print(json.dumps(dict(gc), indent=2))
+
     gc.start_run()
 
     epoch = 0
     stop_training = False
+
     model.train()
+    if torch.cuda.is_available():
+        amp_type = torch.bfloat16 if torch.cuda.get_device_capability()[0] >= 8 else torch.float16
+    else:
+        amp_type = torch.bfloat16
     # Train Loop
     while True:
+        
         gc.start_epoch(metadata={"epoch_num": epoch+1})
-        train_data.sampler.set_epoch(epoch)
+        
         model.train()
         start = time.time()
         total_io_time = 0
         power_draw = []
+        gpu_utilization = []
+
         with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
-            for idx, (x, y, _) in enumerate(train_data):
+            for idx, (x, y) in enumerate(train_data):
                 x, y = x.to(gc.device), y.to(gc.device)
+
                 total_io_time += time.time_ns() - start_io    
-                power_draw.append(get_power())            
-                if ((idx + 1)%gc["data"]["gradient_accumulation"]!=0) or (idx+1 != len(train_data)):
+                power_draw.append(get_power())
+                gpu_utilization.append(get_util())
+                if ((idx + 1)%gc["data"]["gradient_accumulation_freq"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
-                            with torch.autocast(device_type=gc.device, dtype=torch.float16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                            with torch.autocast(device_type=gc.device, dtype=amp_type, enabled=gc["training"]["amp"] and gc.device == "cuda"):
                                 logits = model.forward(x)
-                                loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                                loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
                             scaler.scale(loss).backward()
                         
                     else:
-                        with torch.autocast(device_type=gc.device, dtype=torch.float16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                        with torch.autocast(device_type=gc.device, dtype=amp_type, enabled=gc["training"]["amp"] and gc.device == "cuda"):
                             logits = model.forward(x)
-                            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
                         scaler.scale(loss).backward()
                 else: 
-                    with torch.autocast(device_type=gc.device, dtype=torch.float16, enabled=gc["training"]["amp"] and gc.device == "cuda"):
+                    with torch.autocast(device_type=gc.device, dtype=amp_type, enabled=gc["training"]["amp"] and gc.device == "cuda"):
                         logits = model.forward(x)
-                        loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
+                        loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation_freq"]
                     scaler.scale(loss).backward()
                     scaler.step(opt)
                     scaler.update()
                     opt.zero_grad(set_to_none=True)
                     scheduler.step()
                 start_io = time.time_ns()
-
+                    
+                if idx % 16 == 0:
+                    if gc.rank == 0:
+                        print(f"Epoch: {epoch+1} Batch: {idx}/{len(train_data)} Train Time: {time.time()-start} IO Time: {total_io_time*1e-9}")
+        
         total_io_time *= 1e-9
         total_time = time.time()-start
-        total_time = torch.tensor(total_time)
         avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+        avg_gpu_util = torch.mean(torch.tensor(gpu_utilization, dtype=torch.float64)).to(gc.device)
         dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
-        dist.all_reduce(total_time)
-        total_time /= gc.world_size
+        dist.all_reduce(avg_gpu_util)
         if gc.rank == 0:
-            print(f"Processing Speed: {(train_data_size/total_time).item()}")
+            if epoch == 0:
+                print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
+            print(f"Change In Train Loss at Epoch {epoch}: {loss}")
+            print(f"Processing Speed: {(train_data_size/total_time)}")
             print(f"Time For Epoch: {total_time}")
             print(f"Communication Time: {get_comm_time(prof)}")
             if gc.device == "cuda":
                 print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
+                print(f"Avg GPU Utilization: {avg_gpu_util/gc.world_size:.2f}")
             print(f"Total IO Time: {total_io_time}")
 
 

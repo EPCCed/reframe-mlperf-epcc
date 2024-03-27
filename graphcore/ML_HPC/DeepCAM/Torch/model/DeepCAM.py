@@ -22,6 +22,7 @@
 
 import math
 import torch
+import poptorch
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
@@ -296,52 +297,58 @@ class Xception(nn.Module):
 
     def forward(self, x):
         # Entry flow
-        x = self.conv1(x)
-        x = self.bn1(x)
-        #x = self.relu(x)
+        with poptorch.Block(ipu_id=0):
+            x = self.conv1(x)
+            x = self.bn1(x)
+            #x = self.relu(x)
 
-        x = self.conv2(x)
-        x = self.bn2(x)
-        #x = self.relu(x)
+            x = self.conv2(x)
+            x = self.bn2(x)
+            #x = self.relu(x)
 
-        x = self.block1(x)
-        low_level_feat = x
-        x = self.relu(x)
-        x = self.block2(x)
-        x = self.block3(x)
+            x = self.block1(x)
+            low_level_feat = x
+            x = self.relu(x)
+            x = self.block2(x)
+        with poptorch.Block(ipu_id=1):
+            x = self.block3(x)
 
-        # Middle flow
-        x = self.block4(x)
-        x = self.block5(x)
-        x = self.block6(x)
-        x = self.block7(x)
-        x = self.block8(x)
-        x = self.block9(x)
-        x = self.block10(x)
-        x = self.block11(x)
-        x = self.block12(x)
-        x = self.block13(x)
-        x = self.block14(x)
-        x = self.block15(x)
-        x = self.block16(x)
-        x = self.block17(x)
-        x = self.block18(x)
-        x = self.block19(x)
+            # Middle flow
+            x = self.block4(x)
+            x = self.block5(x)
+        with poptorch.Block(ipu_id=2):
+            x = self.block6(x)
+            x = self.block7(x)
+            x = self.block8(x)
+        with poptorch.Block(ipu_id=3):
+            x = self.block9(x)
+            x = self.block10(x)
+            x = self.block11(x)
+            x = self.block12(x)
+        with poptorch.Block(ipu_id=4):
+            x = self.block13(x)
+            x = self.block14(x)
+            x = self.block15(x)
+        with poptorch.Block(ipu_id=5):    
+            x = self.block16(x)
+            x = self.block17(x)
+            x = self.block18(x)
+        with poptorch.Block(ipu_id=6):
+            x = self.block19(x)
 
-        # Exit flow
-        x = self.block20(x)
-        
-        x = self.conv3(x)        
-        x = self.bn3(x)
-        #x = self.relu(x)
+            # Exit flow
+            x = self.block20(x)
+            
+            x = self.conv3(x)        
+            x = self.bn3(x)
+            #x = self.relu(x)
 
-        x = self.conv4(x)
-        x = self.bn4(x)
-        #x = self.relu(x)
-
-        x = self.conv5(x)
-        x = self.bn5(x)
-        #x = self.relu(x)
+            x = self.conv4(x)
+            x = self.bn4(x)
+            #x = self.relu(x)
+            x = self.conv5(x)
+            x = self.bn5(x)
+            #x = self.relu(x)
 
         return x, low_level_feat
 
@@ -509,16 +516,20 @@ class Tiling(nn.Module):
 
     # warning, this trick only works for H=W=1
     # hacky way to deal with annoying layout changes in tile:
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         if x.stride(1) > 1:
             return torch.tile(x, self.tiles)
         else:
+            # Modified to work with cerebras
             N, C, H, W = x.shape
-            xtmp = torch.as_strided(x, size=[N, 1, 1, C], stride=[C, C, C, 1])
+            # xtmp = torch.as_strided(x, size=[N, 1, 1, C], stride=[C, C, C, 1])
+            xtmp = x.permute(0,3,2,1)
             # tiling is in nchw, needs to change to nhwc
             NT, CT, HT, WT = self.tiles
-            xtmp = torch.tile(xtmp, [NT, HT, WT, CT])
-            x = torch.as_strided(xtmp, size=[N*NT, C*CT, HT, WT], stride=[HT*WT*CT*C, 1, WT*CT*C, CT*C])
+            #xtmp = torch.tile(xtmp, [NT, HT, WT, CT])
+            xtmp = xtmp.repeat([NT, HT, WT, CT])
+            #x = torch.as_strided(xtmp, size=[N*NT, C*CT, HT, WT], stride=[HT*WT*CT*C, 1, WT*CT*C, CT*C])
+            x = xtmp.permute(0, 3, 1, 2)
             return x
     
 
@@ -577,7 +588,27 @@ class Bottleneck(nn.Module):
         #x = self.relu(x)
         
         return x
-    
+
+class CELoss(nn.Module):
+
+    def __init__(self, weight):
+
+        # init superclass
+        super(CELoss, self).__init__()
+
+        # instantiate loss
+        self.criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight).to(torch.float32),reduction="none")
+
+    def forward(self, logit, target):
+
+        # squeeze target
+        target = target.squeeze(1)
+   
+        # get losses and predictions
+        loss = self.criterion(logit, target)
+
+        return poptorch.identity_loss(loss, reduction="mean")
+
                 
 class DeepLabv3_plus(nn.Module):
     def __init__(self, n_input=3, n_classes=21, os=16, pretrained=False, _print=True, rank = 0, process_group = None, enable_gbn = False):
@@ -604,7 +635,9 @@ class DeepLabv3_plus(nn.Module):
 
         # upsampling
         self.upsample = DeconvUpsampler(n_classes, process_group = process_group, enable_gbn = self.enable_gbn)
-
+        loss_pow = -0.125
+        class_weights = [0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow]
+        self.criterion = CELoss(class_weights)
         # initialize weights
         self.__init_weight()
 
@@ -624,22 +657,23 @@ class DeepLabv3_plus(nn.Module):
         self.upsample.__init_weight()
                                         
 
-    def forward(self, input):
+    def forward(self, input, target):
         # encoder
         x, low_level_features = self.xception_features(input)
-        
-        # bottleneck
-        x = self.bottleneck(x)
+        with poptorch.Block(ipu_id=7):
+            # bottleneck
+            x = self.bottleneck(x)
 
-        # low level feature processing
-        low_level_features = self.conv2(low_level_features)
-        low_level_features = self.bn2(low_level_features)
-        #low_level_features = self.relu(low_level_features)
-        
-        # decoder / upsampling logic
-        x = self.upsample(x, low_level_features)
-
-        return x
+            # low level feature processing
+            low_level_features = self.conv2(low_level_features)
+            low_level_features = self.bn2(low_level_features)
+            #low_level_features = self.relu(low_level_features)
+            
+            # decoder / upsampling logic
+    
+            x = self.upsample(x, low_level_features)
+            loss = self.criterion(x, target)
+        return x, loss
 
     def freeze_bn(self):
         for m in self.modules():

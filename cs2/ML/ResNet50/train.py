@@ -1,4 +1,5 @@
 import os
+import time
 
 import cerebras_pytorch as cstorch
 from cerebras_appliance.run_utils import DebugArgs, set_default_ini, write_debug_args
@@ -94,7 +95,7 @@ def main(config):
 
     optimizer = cstorch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9)
 
-    cerebras_loader = cstorch.utils.data.DataLoader(get_dummy_dataloader, params)
+    cerebras_loader = cstorch.utils.data.DataLoader(get_train_dataloader, params)
 
     criterion = torch.nn.CrossEntropyLoss()
     
@@ -113,8 +114,12 @@ def main(config):
         cerebras_loader, num_steps=params["runconfig"]["max_steps"], checkpoint_steps=params["runconfig"]["checkpoint_steps"], cs_config=cs_config, writer=writer
     )
 
+    start = time.time()
     for x, y in executor:
         loss = train_step(x, y)
+    total_time = time.time() - start
+    print(f"Processing Speed: {(dataset_size/total_time).item()}")
+    print(f"Time For Epoch: {total_time}")
 
 def get_default_inis():
     return {

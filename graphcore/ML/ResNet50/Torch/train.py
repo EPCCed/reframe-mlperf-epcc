@@ -9,6 +9,7 @@ import time
 
 import torch
 import poptorch
+import gcipuinfo
 from torchmetrics.classification import Accuracy
 from tqdm import tqdm
 
@@ -25,6 +26,16 @@ def valid_step(x, y, model, loss_fn, metric_tracker):
         metric_tracker(logits, y)
         return loss
 
+def pow_to_float(power):
+    try:
+        return float(power[:-1])
+    except ValueError:
+        return 0
+    
+def get_ipu_power_all():
+    device_powers = ipu_info.getNamedAttributeForAll(gcipuinfo.IpuPower)
+    return [pow_to_float(pow) for pow in device_powers if pow != "N/A"]
+
 
 @click.command()
 @click.option("--config", "-c", default="", show_default=True, type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
@@ -35,15 +46,17 @@ def main(config):
     options = poptorch.Options()
     val_options = poptorch.Options()
     options.replicationFactor(gc["training"]["num_ipus"])
-    options.deviceIterations(4)
-    options.Training.gradientAccumulation(3)
+    options.deviceIterations(1024)
+    options.Training.gradientAccumulation(4)
     val_options.replicationFactor(gc["training"]["num_ipus"])
+    
+    ipu_info = gcipuinfo.gcipuinfo()
 
     options.randomSeed(1)
     torch.manual_seed(1)
 
-    train_data = dl.get_dummy_dataloader(options, 4096*4)
-    val_data = dl.get_dummy_dataloader(val_options)
+    train_data = dl.get_train_dataloader(options)
+    val_data = dl.get_val_dataloader(val_options)
 
     net = ResNet50(num_classes=1000)
     net.train()
@@ -78,17 +91,22 @@ def main(config):
     E = 1
     while True:
         start = time.time()
+        total_power = 0
         for x, y in train_data:
+            device_powers = ipu_info.getNamedAttributeForAll(gcipuinfo.IpuPower)
+            total_power += sum([pow_to_float(power) for power in device_powers if power != "N/A"])
             loss, out = model(x, y)
+        avg_power = total_power/len(train_data)
         
         train_accuracy = train_metric(out, y)
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
         print(f"Train Accuracy at Epoch {E}: {train_accuracy}")
+        dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1281167
+        print(f"Processing Speed: {(dataset_size/total_time).item()}")
         print(f"Time For Epoch: {total_time}")
         print(f"Train Loss at Epoch {E}: {loss}")
-        dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 4096*4 #1000000
-        print(f"Processing Speed: {(dataset_size/total_time).item()}")
+        print(f"Avg IPU Power Usage: {avg_power}")
         print("\n")
 
         if E % 4 == 0:

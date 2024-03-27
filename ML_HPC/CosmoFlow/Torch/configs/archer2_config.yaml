@@ -5,8 +5,8 @@ data:
     h5: False
     global_batch_size: 512
     local_batch_size: 0 # set to 0 to use global
-    n_epochs: 1
-    n_train: 4096 #524288
+    n_epochs: 4
+    n_train: 2048 #524288
     n_eval: 1024 #65536
     gradient_accumulation_freq: 1
     compression: gzip

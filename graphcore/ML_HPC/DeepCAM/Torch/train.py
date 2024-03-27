@@ -1,7 +1,7 @@
 import os
 from pathlib import Path
 import sys
-path_root = Path(__file__).parents[3]
+path_root = Path(os.getcwd()).parents[2]
 sys.path.append(str(path_root))
 import time
 import warnings
@@ -11,83 +11,58 @@ import click
 import torch
 import torch.distributed as dist
 import torch.nn as nn
+import poptorch
+import gcipuinfo
 
 from ML_HPC.gc import GlobalContext
-gc = GlobalContext("/work/ta127/ta127/chrisrae/chris-ml-intern/ML_HPC/DeepCAM/Torch/config.yaml")
+gc = GlobalContext()
 import ML_HPC.DeepCAM.Torch.data.data_loader as dl
 from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
-from ML_HPC.DeepCAM.Torch.optimizer.lamb import Lamb
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
-
-
-class CELoss(nn.Module):
-
-    def __init__(self, weight):
-
-        # init superclass
-        super(CELoss, self).__init__()
-
-        # instantiate loss
-        self.criterion = nn.CrossEntropyLoss(weight=torch.tensor(weight).to(torch.float32), reduction='none')
-
-    def forward(self, logit, target):
-
-        # squeeze target
-        target = target.squeeze(1)
-   
-        # get losses and predictions
-        losses = self.criterion(logit, target)
-
-        # average
-        loss = torch.mean(losses)
-
-        return loss
-
-def dummy_loaders(n_samples):
-    bs = (gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"]
-    yield torch.ones(bs, 16, 768, 1152),  torch.ones(bs, 1, 768, 1152), "file.txt"
+    
+def pow_to_float(power):
+    try:
+        return float(power[:-1])
+    except ValueError:
+        return 0
 
 @click.command()
 @click.option("--device", "-d", default="", show_default="", type=str, help="The device type to run the benchmark on (cpu|gpu|cuda). If not provided will default to config.yaml")
 @click.option("--config", "-c", default="", show_default="", type=str, help="Path to config.yaml. If not provided will default to what is provided in train.py")
 def main(device, config):
-    if device and device.lower() in ('cpu', "gpu", "cuda"):
-        gc["device"] = device.lower()
     if config:
         gc.update_config(config)
-
-
+    if device and device.lower() in ('cpu', "gpu", "cuda"):
+        gc["device"] = device.lower()
+        
+    options = poptorch.Options()
+    val_options = poptorch.Options()
+    options.deviceIterations(1)
+    options.Training.gradientAccumulation(16)
+    options.randomSeed(333)
+    val_options.replicationFactor(gc["training"]["num_ipus"])
+    val_options.deviceIterations(4)
+    val_options.randomSeed(333)
     torch.manual_seed(333)
-    if dist.is_mpi_available():
-        backend = "mpi"
-    elif gc.device == "cuda":
-        backend = "nccl"
-    else:
-        backend = "gloo"
-    dist.init_process_group(backend)
 
     gc.log_deepcam()
     gc.log_seed(333)
-
-    if gc.device == "cuda":
-        local_rank = os.environ["LOCAL_RANK"]
-        torch.cuda.set_device("cuda:" + local_rank)
+    
+    ipu_info = gcipuinfo.gcipuinfo()
     
     gc.start_init()
     
-    train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
+    train_data, train_data_size, val_data, val_data_size = dl.get_dummy_dataloaders(512, options, val_options)  
 
-    model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None).to(gc.device)
-    if gc.world_size > 1:
-        model = torch.nn.parallel.DistributedDataParallel(model)
-
+    net = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=0, process_group=None)
+    
     if gc["opt"]["name"].upper() == "ADAM":
-        opt = torch.optim.Adam(model.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=gc["opt"]["betas"], eps=1e-6, weight_decay=gc["opt"]["weight_decay"])
+        opt = poptorch.optim.Adam(net.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=tuple(gc["opt"]["betas"]), eps=1e-6, weight_decay=gc["opt"]["weight_decay"])
     elif gc["opt"]["name"].upper() == "ADAMW":
-        opt = torch.optim.AdamW(model.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=gc["opt"]["betas"], eps=1e-6, weight_decay=gc["opt"]["weight_decay"])
+        opt = poptorch.optim.AdamW(net.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=tuple(gc["opt"]["betas"]), eps=1e-6, weight_decay=gc["opt"]["weight_decay"])
     elif gc["opt"]["name"].upper() == "LAMB":
-        opt = Lamb(model.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=gc["opt"]["betas"], eps=1e-6, weight_decay=gc["opt"]["weight_decay"])
+        opt = poptorch.optim.LAMB(net.parameters(), lr=gc["lr_schedule"]["base_lr"], betas=tuple(gc["opt"]["betas"]), eps=1e-6, weight_decay=gc["opt"]["weight_decay"])
     else:
         raise NameError(f"Optimiser {gc['opt']['name']} not supported please use ADAM|ADAMW|LAMB")
     
@@ -109,52 +84,49 @@ def main(device, config):
                                                                   eta_min=gc["lr_schedule"]["eta_min"],
                                                                   last_epoch=-1)
 
-    loss_pow = -0.125
-    class_weights = [0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow]
-    criterion = CELoss(class_weights).to(gc.device)
+    model = poptorch.trainingModel(net, options=options, optimizer=opt)
+
+    eval_model = poptorch.inferenceModel(net, options=val_options)
     
     gc.start_init()
     gc.start_run()
 
     epoch = 0
     stop_training = False
-    model.train()
-    # Train Loop
+
     print("Training Started \n")
     while True:
         gc.start_epoch(metadata={"epoch_num": epoch+1})
-        train_data.sampler.set_epoch(epoch)
-        model.train()
-    
+        start = time.time()
+        total_power = 0
         for idx, (x, y, _) in enumerate(train_data):
-            x, y = x.to(gc.device), y.to(gc.device)
-            logits = model.forward(x)
-            loss = criterion.forward(logits, y)/gc["data"]["gradient_accumulation"]
-            loss.backward()
-            if ((idx + 1)%gc["data"]["gradient_accumulation"]==0) or (idx+1 == len(train_data)):
-                opt.step()
-                opt.zero_grad(set_to_none=True)
-                scheduler.step()
+            device_powers = ipu_info.getNamedAttributeForAll(gcipuinfo.IpuPower)
+            total_power += sum([pow_to_float(power) for power in device_powers if power != "N/A"])
+            logits, loss = model(x, y)
+        avg_power = total_power/len(train_data)
+        
+        total_time = time.time()-start
+        total_time = torch.tensor(total_time)
+        
+        print(f"Time For Epoch: {total_time}")
+        print(f"Processing Speed: {4096/total_time}")
+        print(f"Avg IPU Usage: {avg_power}")
         
 
-            loss_avg = loss.detach()
-            if dist.is_initialized():
-                dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)
-            loss_avg_train = loss_avg.item() / float(gc.world_size)
+        loss_avg = loss.detach()
+        loss_avg_train = loss_avg.item() / float(gc.world_size)
 
-            predictions = torch.argmax(torch.softmax(logits, 1), 1)
-            iou = compute_score(predictions, y, num_classes=3)
-            iou_avg = iou.detach()
-            if dist.is_initialized():
-                dist.reduce(iou_avg, dst=0, op=dist.ReduceOp.SUM)
-            iou_avg_train = iou_avg.item() / float(gc.world_size)
+        predictions = torch.argmax(torch.softmax(logits, 1), 1)
+        iou = compute_score(predictions, y, num_classes=3)
+        iou_avg = iou.detach()
+        iou_avg_train = iou_avg.item() / float(gc.world_size)
 
-            gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
-            gc.log_event(key="training_accuracy", value=iou_avg_train, metadata={"epoch_num": epoch+1})
-            gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
+        gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
+        gc.log_event(key="training_accuracy", value=iou_avg_train, metadata={"epoch_num": epoch+1})
+        gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
 
 
-        stop_training = validate(model, criterion, val_data, epoch)
+        stop_training = validate(model, val_data, epoch)
         gc.stop_epoch(metadata={"epoch_num": epoch+1})
         epoch += 1
 
