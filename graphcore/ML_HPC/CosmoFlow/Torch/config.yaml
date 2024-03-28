@@ -1,11 +1,11 @@
 device: cpu
 
 data:
-    data_dir: /work/z19/shared/mlperf-hpc/cosmoflow/full/cosmoUniverse_2019_05_4parE_tf_v2/
+    data_dir: /mnt/ceph_rbd/cosmoUniverse_2019_05_4parE_tf_v2
     global_batch_size: 1
     local_batch_size: 0
     gradient_accumulation_freq: -1
-    n_epochs: 4
+    n_epochs: 10
     n_train: 2048 #524288
     n_eval: 1024 #65536
     compression: gzip

@@ -67,6 +67,7 @@ class ResNet50(nn.Module):
     def forward(self, x, target):
         poptorch.Block.useAutoId()
         with poptorch.Block(ipu_id=0):
+            x = x.to(torch.float32)
             out = self.relu(self.bn1(self.conv1(x)))
             out = self.mp(out)
             out = self.layer1(out)
