@@ -92,7 +92,7 @@ class CamDataset(Dataset):
         self.shuffle = shuffle
         self.preprocess = preprocess
         self.transpose = transpose
-        self.all_files = sorted( [ os.path.join(self.source,x) for x in os.listdir(self.source) if x.endswith('.h5') ] )
+        self.all_files = sorted( [ os.path.join(self.source,x) for x in os.listdir(self.source) if x.endswith('.h5') and "stats" not in x] )
         self.comm_size = comm_size
         self.comm_rank = comm_rank
         self.allow_uneven_distribution = allow_uneven_distribution
@@ -112,15 +112,18 @@ class CamDataset(Dataset):
         #get statsfile for normalization
         #open statsfile
         with h5.File(self.statsfile, "r") as f:
-            data_shift = f["climate"]["minval"][self.channels]
-            data_scale = 1. / ( f["climate"]["maxval"][self.channels] - data_shift )
+            data_shift = torch.from_numpy(f["climate"]["minval"][self.channels])
+            data_scale = 1. / ( torch.from_numpy(f["climate"]["maxval"][self.channels]) - data_shift )
 
         #reshape into broadcastable shape
-        self.data_shift = np.reshape( data_shift, (1, 1, data_shift.shape[0]) ).astype(np.float32)
-        self.data_scale = np.reshape( data_scale, (1, 1, data_scale.shape[0]) ).astype(np.float32)
+        self.data_shift = torch.reshape( data_shift, (1, 1, data_shift.shape[0]) ).to(torch.float32)
+        self.data_scale = torch.reshape( data_scale, (1, 1, data_scale.shape[0]) ).to(torch.float32)
 
         if comm_rank == 0:
             print("Initialized dataset with ", self.global_size, " samples.")
+        
+        loss_pow = -0.125
+        self.weights = torch.tensor([0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow], dtype=torch.float32).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
 
 
     def __len__(self):
@@ -137,24 +140,24 @@ class CamDataset(Dataset):
 
         #load data and project
         with h5.File(filename, "r") as f:
-            data = f["climate/data"][..., self.channels]
-            label = f["climate/labels_0"][...].astype(np.int64)
+            data = torch.from_numpy(f["climate/data"][..., self.channels])
+            label = torch.from_numpy(f["climate/labels_0"][...]).to(torch.int64)
         
         #preprocess
         data = self.data_scale * (data - self.data_shift)
 
         if self.transpose:
             #transpose to NCHW
-            data = np.transpose(data, (2,0,1))
+            data = torch.permute(data, (2,0,1))
         
-        return data, label, filename
+        return data, label, self.weights
 
 
 
 def get_train_dataloader(params):
     params = params["train_input"]
     train_set = CamDataset(params["data_dir"], 
-                           statsfile = os.path.join(params["data"]["data_dir"], 'stats.h5'),
+                           statsfile = os.path.join(params["data_dir"], 'stats.h5'),
                            channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
                            allow_uneven_distribution = False,
                            shuffle = True, 
@@ -176,7 +179,7 @@ def get_train_dataloader(params):
 def get_eval_dataloader(params):
     params = params["train_input"]
     validation_set = CamDataset(params["data_dir"], 
-                                statsfile = os.path.join(params["data"]["data_dir"], 'stats.h5'),
+                                statsfile = os.path.join(params["data_dir"], 'stats.h5'),
                                 channels = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15],
                                 allow_uneven_distribution = True,
                                 shuffle = False,
@@ -191,3 +194,13 @@ def get_eval_dataloader(params):
                                    num_workers=params.get("num_workers", 0))
         
     return validation_loader
+
+if __name__ == "__main__":
+    import yaml
+    with open("/home/z043/z043/crae-cs1/chris-ml-intern/cs2/ML_HPC/DeepCAM/params.yaml", "r") as stream:
+        params = yaml.safe_load(stream)
+    loader = get_train_dataloader(params)
+    for x,y,w in loader:
+        #torch.Size([1, 16, 768, 1152]) torch.Size([1, 768, 1152])
+        print(x.shape, y.shape)
+        break

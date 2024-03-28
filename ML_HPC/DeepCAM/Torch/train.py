@@ -1,23 +1,16 @@
 import os
-from pathlib import Path
 import sys
-path_root = Path(os.getcwd()).parents[2]
+path_root = "/".join(sys.argv[0].split("/")[:-4])
 sys.path.append(str(path_root))
-from textwrap import indent
 import time
-from contextlib import contextmanager
 import warnings
 warnings.filterwarnings("ignore")
 import click
-from packaging import version
-import copy
 import json
 
 import torch
 import torch.distributed as dist
 import torch.nn as nn
-
-torch.backends.cudnn.benchmark
 
 from ML_HPC.gc import GlobalContext
 gc = GlobalContext()
@@ -27,17 +20,6 @@ from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, Cosi
 from ML_HPC.DeepCAM.Torch.optimizer.lamb import Lamb
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
 
-if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available() and torch.version.cuda:
-    get_power = torch.cuda.power_draw
-else:
-    get_power = lambda : 0
-    print("Torch Version Too Low for GPU Power Metrics")
-    print(version.parse(torch.__version__))
-
-if torch.cuda.is_available() and torch.version.cuda:
-    get_util = torch.cuda.utilization
-else:
-    get_util = lambda : 0
 
 class CELoss(nn.Module):
 
@@ -61,10 +43,6 @@ class CELoss(nn.Module):
         loss = torch.mean(losses)
 
         return loss
-
-def dummy_loaders(n_samples):
-    bs = (gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"]
-    yield torch.ones(bs, 16, 768, 1152),  torch.ones(bs, 1, 768, 1152), "file.txt"
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
@@ -108,12 +86,14 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         torch.cuda.set_device("cuda:" + str(gc.local_rank))
     
 
-    gc.log_deepcam()
+    
 
     gc.start_init()
+    gc.log_seed(333)
     
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
-
+    gc.log_deepcam()
+    
     model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None,).to(gc.device)
 
     if gc.world_size > 1:
@@ -186,8 +166,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 x, y = x.to(gc.device), y.to(gc.device)
 
                 total_io_time += time.time_ns() - start_io    
-                power_draw.append(get_power())
-                gpu_utilization.append(get_util())
+                power_draw.append(gc.gpu_power)
+                gpu_utilization.append(gc.gpu_util)
                 if ((idx + 1)%gc["data"]["gradient_accumulation_freq"]!=0) or (idx+1 != len(train_data)):
                     if isinstance(model, nn.parallel.DistributedDataParallel):
                         with model.no_sync():
@@ -220,7 +200,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         total_time = time.time()-start
         avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
         avg_gpu_util = torch.mean(torch.tensor(gpu_utilization, dtype=torch.float64)).to(gc.device)
-        dist.all_reduce(avg_power_draw, op=dist.ReduceOp.SUM)
+        dist.all_reduce(avg_power_draw)
         dist.all_reduce(avg_gpu_util)
         if gc.rank == 0:
             if epoch == 0:

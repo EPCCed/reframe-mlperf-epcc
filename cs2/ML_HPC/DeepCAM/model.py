@@ -1,5 +1,8 @@
 import math
+from termios import INPCK
 import torch
+from torch import conv2d
+from torch import ParameterDict
 import torch.nn as nn
 import torch.nn.functional as F
 import torch.utils.model_zoo as model_zoo
@@ -40,7 +43,6 @@ class GBN(nn.Module):
         
         return x
 
-
 def get_batchnorm(num_features, fuse_relu=False, process_group=None, enable_gbn=False):
     if process_group is not None:
         return GBN(num_features, fuse_relu=fuse_relu, process_group=process_group, enable_gbn=enable_gbn)
@@ -50,13 +52,44 @@ def get_batchnorm(num_features, fuse_relu=False, process_group=None, enable_gbn=
         else:
             return nn.BatchNorm2d(num_features)
 
+
+class FullGroupConv2D(nn.Module):
+    def __init__(self, in_planes, k_size, stride, padding, dilation, bias):
+        super().__init__()
+        if isinstance(k_size, int):
+            k_size = (k_size, k_size)
+        self.k = torch.nn.Parameter(torch.randn(in_planes, 1, *k_size), requires_grad=True)
+        if bias:
+            self.b = torch.nn.Parameter(torch.zeros(in_planes))
+        else:
+            self.b = None
+        self.conv_kwargs = {"stride": stride, "padding": padding, "dilation": dilation}
+        
+        #self.convs = [nn.Conv2d(1, 1, k_size, stride, padding, dilation, bias=bias) for _ in range(in_planes)]
+
+    def forward(self, x):
+        #return torch.vmap(lambda x, k: F.conv2d(x.unsqueeze(1), k.unsqueeze(0), bias = self.b, **self.conv_kwargs).squeeze(1), in_dims=(1,0), out_dims=1)(x, self.k)
+        slices = [F.conv2d(x[:,i,:,:].unsqueeze(1), self.k[i,:,:,:].unsqueeze(0), bias = self.b, **self.conv_kwargs) for i in range(x.size(1))]
+        return torch.cat(slices, dim=1)
+
+class PointwiseConv2D(nn.Module):
+    def __init__(self, inplanes, planes, bias):
+        super().__init__()
+        self.k = torch.nn.Parameter(torch.randn(planes, inplanes, 1, 1), requires_grad=True)
+        if bias:
+            self.b = torch.nn.Parameter(torch.zeros(planes))
+        else:
+            self.b = None
+    def forward(self, x):
+        return F.conv2d(x, self.k, bias=self.b)
     
+
 class SeparableConv2d(nn.Module):
     def __init__(self, inplanes, planes, kernel_size=3, stride=1, padding=0, dilation=1, bias=False):
         super(SeparableConv2d, self).__init__()
 
-        self.conv1 = nn.Conv2d(inplanes, inplanes, kernel_size, stride, padding, dilation,
-                               groups=inplanes, bias=bias)
+        self.conv1 = nn.Conv2d(inplanes, inplanes, kernel_size, stride, padding, dilation, groups=inplanes, bias=bias)
+        #self.conv1 = FullGroupConv2D(inplanes, kernel_size, stride, padding, dilation, bias)
         self.pointwise = nn.Conv2d(inplanes, planes, 1, 1, 0, 1, 1, bias=bias)
 
     def forward(self, x):
@@ -79,8 +112,8 @@ class SeparableConv2d_same(nn.Module):
 
         # compute padding here
         pad_beg, pad_end = compute_padding(kernel_size, rate=dilation)
-        self.conv1 = nn.Conv2d(inplanes, inplanes, kernel_size, stride, (pad_beg, pad_beg), dilation,
-                               groups=inplanes, bias=bias)
+        self.conv1 = nn.Conv2d(inplanes, inplanes, kernel_size, stride, (pad_beg, pad_beg), dilation, groups=inplanes, bias=bias)
+        #self.conv1 = FullGroupConv2D(inplanes, kernel_size, stride, (pad_beg, pad_beg), dilation, bias)
         self.pointwise = nn.Conv2d(inplanes, planes, 1, 1, 0, 1, 1, bias=bias)
 
     def forward(self, x):
@@ -252,12 +285,6 @@ class Xception(nn.Module):
         self.conv5 = SeparableConv2d_same(1536, 2048, 3, stride=1, dilation=exit_block_rates[1])
         self.bn5 = get_batchnorm(2048, fuse_relu=True, process_group=process_group, enable_gbn = self.enable_gbn)
 
-        # Init weights
-        self.__init_weight()
-
-        # Load pretrained model
-        if pretrained:
-            self.__load_xception_pretrained()
 
     def forward(self, x):
         # Entry flow
@@ -309,16 +336,7 @@ class Xception(nn.Module):
         #x = self.relu(x)
 
         return x, low_level_feat
-
-    def __init_weight(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                # n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                # m.weight.data.normal_(0, math.sqrt(2. / n))
-                torch.nn.init.kaiming_normal_(m.weight)
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.SyncBatchNorm) or isinstance(m, GroupBN):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
+    
 
     def __load_xception_pretrained(self):
         pretrain_dict = model_zoo.load_url('http://data.lip6.fr/cadene/pretrainedmodels/xception-b5690688.pth')
@@ -367,24 +385,12 @@ class ASPP_module(nn.Module):
         self.bn = get_batchnorm(planes, fuse_relu=True, process_group=process_group, enable_gbn = self.enable_gbn)
         #self.relu = nn.ReLU()
 
-        self.__init_weight()
-
     def forward(self, x):
         x = self.atrous_convolution(x)
         x = self.bn(x)
         #x = self.relu(x)
 
         return x
-
-    def __init_weight(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                # n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                # m.weight.data.normal_(0, math.sqrt(2. / n))
-                torch.nn.init.kaiming_normal_(m.weight)
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.SyncBatchNorm) or isinstance(m, GroupBN):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
 
 
 class DeconvUpsampler(nn.Module):
@@ -425,18 +431,6 @@ class DeconvUpsampler(nn.Module):
         x = self.last_deconv(x)
         return x
 
-    def __init_weight(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.ConvTranspose2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.SyncBatchNorm) or isinstance(m, GroupBN):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-
                 
 class TrainableAffine(nn.Module):
     def __init__(self, num_features):
@@ -444,11 +438,16 @@ class TrainableAffine(nn.Module):
         self.num_features = num_features
 
         # weights for affine trans
-        self.weights = nn.Parameter(torch.ones((num_features, 1, 1), requires_grad=True))
-        self.bias = nn.Parameter(torch.zeros((num_features, 1, 1), requires_grad=True))
+        #self.weights = nn.Parameter(torch.ones((num_features, 1, 1), requires_grad=True))
+        #self.bias =  nn.Parameter(torch.zeros((num_features, 1, 1), requires_grad=True))
 
     def forward(self, x):
-        return self.weights * x + self.bias
+        return x
+        return torch.add(torch.mul(x, self.weights), self.bias)
+        print(x.shape)
+        out =  self.weights * x + self.bias
+        print(out.shape)
+        return out
 
 
 class GlobalAveragePool(nn.Module):
@@ -474,16 +473,20 @@ class Tiling(nn.Module):
 
     # warning, this trick only works for H=W=1
     # hacky way to deal with annoying layout changes in tile:
-    def forward(self, x):
+    def forward(self, x: torch.Tensor):
         if x.stride(1) > 1:
             return torch.tile(x, self.tiles)
         else:
+            # Modified to work with cerebras
             N, C, H, W = x.shape
-            xtmp = torch.as_strided(x, size=[N, 1, 1, C], stride=[C, C, C, 1])
+            # xtmp = torch.as_strided(x, size=[N, 1, 1, C], stride=[C, C, C, 1])
+            xtmp = x.permute(0,3,2,1)
             # tiling is in nchw, needs to change to nhwc
             NT, CT, HT, WT = self.tiles
-            xtmp = torch.tile(xtmp, [NT, HT, WT, CT])
-            x = torch.as_strided(xtmp, size=[N*NT, C*CT, HT, WT], stride=[HT*WT*CT*C, 1, WT*CT*C, CT*C])
+            #xtmp = torch.tile(xtmp, [NT, HT, WT, CT])
+            xtmp = xtmp.repeat([NT, HT, WT, CT])
+            #x = torch.as_strided(xtmp, size=[N*NT, C*CT, HT, WT], stride=[HT*WT*CT*C, 1, WT*CT*C, CT*C])
+            x = xtmp.permute(0, 3, 1, 2)
             return x
     
 
@@ -542,15 +545,25 @@ class Bottleneck(nn.Module):
         #x = self.relu(x)
         
         return x
+
+class CELoss(nn.Module):
+
+    def __init__(self):
+        super(CELoss, self).__init__()
+        # init superclass
+        loss_pow = -0.125
+        #weights = [0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow]
+        self.weights = torch.tensor([0.986267818390377**loss_pow, 0.0004578708870701058**loss_pow, 0.01327431072255291**loss_pow], dtype=torch.float32).unsqueeze(0).unsqueeze(-1).unsqueeze(-1)
+
+    def forward(self, logit, target):
+        target = target.unsqueeze(1)
+        ls_logit = F.log_softmax(logit, dim=1)
+        losses = self.weights*target*ls_logit
+        return torch.mean(losses)
     
                 
 class DeepLabv3_plus(nn.Module):
-    def __init__(self, n_input=3, n_classes=21, os=16, pretrained=False, _print=True, rank = 0, process_group = None, enable_gbn = False):
-        if _print and (rank == 0):
-            print("Constructing DeepLabv3+ model...")
-            print("Number of output channels: {}".format(n_classes))
-            print("Output stride: {}".format(os))
-            print("Number of Input Channels: {}".format(n_input))
+    def __init__(self, n_input=3, n_classes=21, os=16, pretrained=False, process_group = None, enable_gbn = False):
         super(DeepLabv3_plus, self).__init__()
 
         # groupbn
@@ -570,24 +583,6 @@ class DeepLabv3_plus(nn.Module):
         # upsampling
         self.upsample = DeconvUpsampler(n_classes, process_group = process_group, enable_gbn = self.enable_gbn)
 
-        # initialize weights
-        self.__init_weight()
-
-    def __init_weight(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                # n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                # m.weight.data.normal_(0, math.sqrt(2. / n))
-                torch.nn.init.kaiming_normal_(m.weight)
-            elif isinstance(m, nn.ConvTranspose2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.SyncBatchNorm) or isinstance(m, GroupBN):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
-        self.xception_features.__init_weight()
-        self.upsample.__init_weight()
-                                        
 
     def forward(self, input):
         # encoder
@@ -603,23 +598,15 @@ class DeepLabv3_plus(nn.Module):
         
         # decoder / upsampling logic
         x = self.upsample(x, low_level_features)
-
         return x
+
+        return self.criterion(x, target)
 
     def freeze_bn(self):
         for m in self.modules():
             if isinstance(m, nn.BatchNorm2d):
                 m.eval()
 
-    def __init_weight(self):
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
-                # torch.nn.init.kaiming_normal_(m.weight)
-            elif isinstance(m, nn.BatchNorm2d) or isinstance(m, nn.SyncBatchNorm) or isinstance(m, GroupBN):
-                m.weight.data.fill_(1)
-                m.bias.data.zero_()
 
 def get_1x_lr_params(model):
     """
@@ -646,32 +633,13 @@ def get_10x_lr_params(model):
             if k.requires_grad:
                 yield k
 
+
 if __name__ == "__main__":
-    torch.cuda.memory._record_memory_history()
-    model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, process_group=None,).to("cuda")
-    opt = torch.optim.SGD(model.parameters(), 0.0001)
-    x, y = torch.randn(1, 16, 768, 1152).to("cuda"), torch.randn(1, 768, 1152).to("cuda")
-    w = torch.ones(3).unsqueeze(0).unsqueeze(-1).unsqueeze(-1).to("cuda")
-    print(torch.cuda.memory_summary())
-    for _ in range(10):
-        logits = model(x)
-        torch.cuda.synchronize()
-        #print(torch.cuda.memory_summary())
-        # CELoss
-        def loss_fn(logits, target, weights):
-            target = target.unsqueeze(1)
-            ls_logits = F.log_softmax(logits, dim=1)
-            losses = weights*target*ls_logits
-            return torch.mean(losses)
-        loss = loss_fn(logits, y, w)
-        print(loss)
-        loss.backward()
-        torch.cuda.synchronize()
-        #print(torch.cuda.memory_summary())
-        opt.step()
-        opt.zero_grad()
-        torch.cuda.synchronize()
-    torch.cuda.memory._dump_snapshot("deepcam_snapshot.pickle")
-    
-
-
+    model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, process_group=None,)
+    for i in model.named_parameters(),:
+        for s, p in i:
+            if p.ndim == 4:
+                if p.shape == torch.Size([1,1,3,1]):
+                    print(s, p.shape)
+    x = torch.randn([1, 16, 768, 1152])
+    #model(x)

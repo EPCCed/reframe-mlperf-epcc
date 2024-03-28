@@ -1,7 +1,6 @@
-from typing import Any
 import yaml
 import os
-import time
+from packaging import version
 from contextlib import contextmanager
 
 import torch
@@ -96,6 +95,22 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
             self.update(yaml.safe_load(stream))
             if self["device"].lower() == 'gpu':
                 self["device"] = "cuda"
+    
+    @property
+    def gpu_power(self):
+        t_ver = version.parse(torch.__version__).release
+        if t_ver[0] == 2 and t_ver[1] >= 1 and torch.cuda.is_available() and torch.version.cuda:
+            return torch.cuda.power_draw()
+        else:
+            return 0.0
+    
+    @property
+    def gpu_util(self):
+        t_ver = version.parse(torch.__version__).release
+        if t_ver[0] == 2 and torch.cuda.is_available() and torch.version.cuda:
+            return torch.cuda.utilization()
+        else:
+            return 0.0
     
     @_run_on_0
     def log_cosmoflow(self):

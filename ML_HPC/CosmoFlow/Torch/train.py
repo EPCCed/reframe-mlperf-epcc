@@ -1,17 +1,9 @@
-from pathlib import Path
 import sys
 import os
-
-#path_root = Path(__file__).parents[3]
-path_root = Path(os.getcwd()).parents[2]
+path_root = "/".join(sys.argv[0].split("/")[:-4])
 sys.path.append(str(path_root))
 import time
-import warnings
-warnings.filterwarnings("ignore")
 import click
-import copy
-from datetime import datetime
-from packaging import version
 
 import torch 
 import torch.nn as nn
@@ -24,18 +16,6 @@ from ML_HPC.CosmoFlow.Torch.model.cosmoflow import StandardCosmoFlow
 import ML_HPC.CosmoFlow.Torch.data.TF_record_loader as TF_rl
 import ML_HPC.CosmoFlow.Torch.data.h5_dataloader as h5_dl
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
-
-if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available() and torch.version.cuda:
-    get_power = torch.cuda.power_draw
-else:
-    get_power = lambda : 0
-    print("Torch Version Too Low for GPU Power Metrics")
-    print(version.parse(torch.__version__))
-
-if torch.cuda.is_available() and torch.version.cuda:
-    get_util = torch.cuda.utilization
-else:
-    get_util = lambda : 0
 
 #Mean Absolute Error
 class DistributedMAE:
@@ -105,7 +85,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.device == "cuda":
         torch.cuda.set_device("cuda:" + str(gc.local_rank))
 
-    gc.log_cosmoflow()
+    
     gc.start_init()
     gc.log_seed(1)
 
@@ -118,6 +98,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         get_val_dataloader = TF_rl.get_val_dataloader
     train_data = get_train_dataloader()
     val_data = get_val_dataloader()
+    
+    gc.log_cosmoflow()
     
     if gc.rank == -1:
         train_data = tqdm(train_data, miniters=64, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
@@ -156,8 +138,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 x, y = x.to(gc.device), y.to(gc.device)
                 
                 total_io_time += time.time_ns() - start_io
-                power_draw.append(get_power())
-                gpu_utilization.append(get_util())
+                power_draw.append(gc.gpu_power)
+                gpu_utilization.append(gc.gpu_util)
                 if idx%gc["data"]["gradient_accumulation_freq"] != 0:
                     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                         with model.no_sync():
@@ -176,13 +158,9 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     opt.step()
                     opt.zero_grad()
                 
-                if idx % 64 == 0:
-                    if gc.rank == 0:
-                        print(f"Epoch: {epoch+1} Batch: {idx} Train Time: {time.time()-start} IO Time: {total_io_time*1e-9}")
-                
-                #dist.barrier()
-            
+                torch.cuda.synchronize()
                 start_io = time.time_ns()
+                
         dist.barrier()
         total_io_time *= 1e-9
         

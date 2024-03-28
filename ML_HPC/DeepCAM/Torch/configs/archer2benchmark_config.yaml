@@ -3,10 +3,10 @@ device: cpu
 data:
     data_dir: /work/z19/shared/mlperf-hpc/deepcam/mini//deepcam-data-n512
     global_batch_size: 32
-    local_batch_size: 8
+    local_batch_size: 0
     gradient_accumulation_freq: 1
     shuffle: true
-    n_epochs: 
+    n_epochs: 10
     prefetch: 4
 
 opt:

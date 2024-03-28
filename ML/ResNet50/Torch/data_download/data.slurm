@@ -14,6 +14,10 @@ conda activate mlperf-torch
 
 DATADIR = /path/to/data/
 
+tar -xzf $DATADIR/train_images_0.tar.gz -C $DATADIR/train
+rm $DATADIR/train_images_0.tar.gz
+python data_prep.py
+
 tar -xzf $DATADIR/train_images_1.tar.gz -C $DATADIR/train
 rm $DATADIR/train_images_1.tar.gz
 python data_prep.py

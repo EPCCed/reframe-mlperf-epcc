@@ -45,9 +45,11 @@ def main(config):
 
     options = poptorch.Options()
     val_options = poptorch.Options()
-    options.replicationFactor(gc["training"]["num_ipus"])
-    options.deviceIterations(1024)
-    options.Training.gradientAccumulation(4)
+    options.Precision.setPartialsType(torch.float16)
+    options.replicationFactor(4)
+    options.deviceIterations(32)
+    options.setExecutionStrategy(poptorch.ShardedExecution())
+    options.Training.gradientAccumulation(8)
     val_options.replicationFactor(gc["training"]["num_ipus"])
     
     ipu_info = gcipuinfo.gcipuinfo()
@@ -83,9 +85,6 @@ def main(config):
         opt, total_iters=gc["data"]["n_epochs"], power=gc["lr_schedule"]["poly_power"]
     )
 
-    train_metric = Accuracy(task="multiclass", num_classes=1000)
-    val_metric = Accuracy(task="multiclass", num_classes=1000)
-
     model.train()
 
     E = 1
@@ -98,10 +97,10 @@ def main(config):
             loss, out = model(x, y)
         avg_power = total_power/len(train_data)
         
-        train_accuracy = train_metric(out, y)
+        #train_accuracy = train_metric(out, y)
         total_time = time.time()-start
         total_time = torch.tensor(total_time)
-        print(f"Train Accuracy at Epoch {E}: {train_accuracy}")
+        #print(f"Train Accuracy at Epoch {E}: {train_accuracy}")
         dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1281167
         print(f"Processing Speed: {(dataset_size/total_time).item()}")
         print(f"Time For Epoch: {total_time}")
@@ -110,12 +109,13 @@ def main(config):
         print("\n")
 
         if E % 4 == 0:
-            for x, y in val_data:
-                out, loss = eval_model(x,y)
-                val_metric(out, y)
-            val_accuracy = val_metric.compute()
-            print(f"Train Accuracy at Epoch {E}: {val_accuracy}")
-            print(f"Validation Loss at Epoch {E}: {loss}")
+            val_accuracy = 0
+            #for x, y in val_data:
+                #out, loss = eval_model(x,y)
+                #val_metric(out, y)
+            #val_accuracy = val_metric.compute()
+            #print(f"Train Accuracy at Epoch {E}: {val_accuracy}")
+            #print(f"Validation Loss at Epoch {E}: {loss}"
         E += 1
         if "val_accuracy" in dir(): 
             if E == gc["data"]["n_epochs"] or val_accuracy >= gc["training"]["target_accuracy"]:

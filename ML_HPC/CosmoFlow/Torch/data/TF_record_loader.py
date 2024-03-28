@@ -91,6 +91,3 @@ def get_val_dataloader():
                       #prefetch_factor=gc["data"]["prefetch"]
                       )
 
-
-if __name__ == "__main__":
-    ...
