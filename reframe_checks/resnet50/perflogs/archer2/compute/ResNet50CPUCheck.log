@@ -1,9 +1,0 @@
-job_completion_time|version|info|jobid|perf_var=perf_value|perf_ref perf_lower_thres,perf_upper_thres)perf_unit
-2023-12-06T10:48:29|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5025469|null=null|ref=null (l=null, u=null)|null
-2023-12-06T12:01:31|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5026024|null=null|ref=null (l=null, u=null)|null
-2023-12-06T12:21:05|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5026135|null=null|ref=null (l=null, u=null)|null
-2023-12-06T13:07:07|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5026492|null=null|ref=null (l=null, u=null)|null
-2023-12-06T13:27:14|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5026815|null=null|ref=null (l=null, u=null)|null
-2023-12-06T13:40:15|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5026917|null=null|ref=null (l=null, u=null)|null
-2023-12-07T15:20:28|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5034385|null=null|ref=null (l=null, u=null)|null
-2023-12-07T15:45:17|reframe 4.2.1|ResNet50CPUCheck /baf749c9 @archer2:compute+PrgEnv-gnu|jobid=5034487|null=null|ref=null (l=null, u=null)|null

@@ -1,6 +1,6 @@
 import yaml
 import os
-import time
+from packaging import version
 from contextlib import contextmanager
 
 import torch
@@ -97,63 +97,20 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                 self["device"] = "cuda"
     
     @property
-    def mpi_log_hook(self):
-        # probably wont work due to asynchronous property of futures
-        if not hasattr(self, "_mpi_total_time"):
-            self._mpi_total_time = 0
-            self._total_call = 0
-        if not hasattr(self, "_mpi_iter_start_time"):
-            self._mpi_iter_start_time = 0
-        
-
-        def _call_start_timer():
-            self._mpi_iter_start_time = time.time_ns()
-            self._total_call += 1
-
-        def _call_log_timer():
-            self._mpi_total_time += time.time_ns() - self._mpi_iter_start_time
-
-        def _time_mpi(pg, bucket):
-            group_to_use = pg if pg is not None else dist.group.WORLD
-            
-            def _log(fut):
-                out_tensor = bucket.buffer()
-                out_tensor.copy_(fut.value()[0])
-                _call_log_timer()
-                return out_tensor
-        
-            _call_start_timer()
-            fut = dist.all_reduce(bucket.buffer().div_(group_to_use.size()), group=group_to_use, async_op=True).get_future()
-            return fut.then(_log)
-        return _time_mpi
+    def gpu_power(self):
+        t_ver = version.parse(torch.__version__).release
+        if t_ver[0] == 2 and t_ver[1] >= 1 and torch.cuda.is_available() and torch.version.cuda:
+            return torch.cuda.power_draw()
+        else:
+            return 0.0
     
     @property
-    def multi_node_hook(self):
-        taskspernode = self.world_size // int(os.environ["SLURM_NNODES"])    
-        node = self.rank // taskspernode
-        print(self.rank, node, list([i for i in range(self.world_size) if i % taskspernode == 0]), list([node*taskspernode + i for i in range(taskspernode)])) 
-        self["L0_ranks"] = dist.new_group(ranks=list([i for i in range(self.world_size) if i % taskspernode == 0]))
-        self["local_ranks"] = dist.new_group(ranks=list([node*taskspernode + i for i in range(taskspernode)]))  # could use nccl 
-            
-        def _all_reduce(fut0):
-            fut1 = dist.reduce(fut0.value()[0], dst=0, group=self["local_ranks"], async_op=True).get_future()
-            fut2 = dist.all_reduce(fut1.value()[0], group=self["L0_ranks"], async_op=True).get_future()
-            return dist.broadcast(fut2.value()[0], src=0, group=self["local_ranks"], async_op=True).get_future()
-        
-        def _dev(fut):
-            return fut.value()[0] / self.world_size
-        
-        def _custom_hook(state, bucket):
-            fut = torch.futures.Future()
-            fut.set_result(bucket.buffer())
-            fut.then(_all_reduce)
-            return fut.then(_dev)
-            
-        return _custom_hook
-        
-        
-    def get_mpi(self):
-        return self._mpi_total_time*1e-9
+    def gpu_util(self):
+        t_ver = version.parse(torch.__version__).release
+        if t_ver[0] == 2 and torch.cuda.is_available() and torch.version.cuda:
+            return torch.cuda.utilization()
+        else:
+            return 0.0
     
     @_run_on_0
     def log_bert(self):

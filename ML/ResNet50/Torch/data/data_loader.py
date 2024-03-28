@@ -99,3 +99,5 @@ def get_val_dataloader():
                       pin_memory = True if gc.device == "cuda" else False 
                       )
 
+if __name__ == "__main__":
+    print(__file__)

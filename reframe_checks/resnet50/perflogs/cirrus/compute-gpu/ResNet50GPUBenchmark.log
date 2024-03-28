@@ -1,9 +1,0 @@
-job_completion_time|version|info|jobid|perf_var=perf_value|perf_ref perf_lower_thres,perf_upper_thres)perf_unit
-2023-12-07T13:01:51|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5144417|null=null|ref=null (l=null, u=null)|null
-2023-12-07T15:04:48|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5144868|null=null|ref=null (l=null, u=null)|null
-2023-12-07T15:54:09|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5146472|null=null|ref=null (l=null, u=null)|null
-2023-12-08T09:33:17|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5151907|null=null|ref=null (l=null, u=null)|null
-2023-12-08T10:04:30|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5151983|null=null|ref=null (l=null, u=null)|null
-2023-12-08T10:12:33|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5151988|null=null|ref=null (l=null, u=null)|null
-2023-12-08T15:58:55|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5154710|null=null|ref=null (l=null, u=null)|null
-2023-12-08T16:49:40|reframe 4.4.0-dev.1|ResNet50GPUBenchmark /0f809d01 @cirrus:compute-gpu+nvidia-mpi|jobid=5154799|null=null|ref=null (l=null, u=null)|null

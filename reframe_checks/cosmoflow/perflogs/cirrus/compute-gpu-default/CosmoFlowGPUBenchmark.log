@@ -1,3 +1,0 @@
-job_completion_time|version|info|jobid|perf_var=perf_value|perf_ref perf_lower_thres,perf_upper_thres)perf_unit
-2023-12-13T14:31:53|reframe 4.4.0-dev.1|CosmoFlowGPUBenchmark /02275040 @cirrus:compute-gpu-default+Default|jobid=5227916|null=null|ref=null (l=null, u=null)|null
-2023-12-13T14:45:02|reframe 4.4.0-dev.1|CosmoFlowGPUBenchmark /02275040 @cirrus:compute-gpu-default+Default|jobid=5228018|null=null|ref=null (l=null, u=null)|null

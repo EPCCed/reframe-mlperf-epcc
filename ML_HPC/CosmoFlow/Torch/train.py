@@ -2,16 +2,11 @@ from pathlib import Path
 import sys
 import os
 
-#path_root = Path(__file__).parents[3]
-path_root = Path(os.getcwd()).parents[2]
+path_root = "/".join(os.path.abspath("__file__").split("/")[:-4])
 sys.path.append(str(path_root))
 import time
-import warnings
-warnings.filterwarnings("ignore")
 import click
-import copy
-from datetime import datetime
-from packaging import version
+
 
 import torch 
 import torch.nn as nn
@@ -24,18 +19,6 @@ from ML_HPC.CosmoFlow.Torch.model.cosmoflow import StandardCosmoFlow
 import ML_HPC.CosmoFlow.Torch.data.TF_record_loader as TF_rl
 import ML_HPC.CosmoFlow.Torch.data.h5_dataloader as h5_dl
 from ML_HPC.CosmoFlow.Torch.lr_schedule.scheduler import CosmoLRScheduler
-
-if version.parse(torch.__version__).release[0] == 2 and version.parse(torch.__version__).release[1]>=1 and torch.cuda.is_available() and torch.version.cuda:
-    get_power = torch.cuda.power_draw
-else:
-    get_power = lambda : 0
-    print("Torch Version Too Low for GPU Power Metrics")
-    print(version.parse(torch.__version__))
-
-if torch.cuda.is_available() and torch.version.cuda:
-    get_util = torch.cuda.utilization
-else:
-    get_util = lambda : 0
 
 #Mean Absolute Error
 class DistributedMAE:
@@ -156,8 +139,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 x, y = x.to(gc.device), y.to(gc.device)
                 
                 total_io_time += time.time_ns() - start_io
-                power_draw.append(get_power())
-                gpu_utilization.append(get_util())
+                power_draw.append(gc.gpu_power)
+                gpu_utilization.append(gc.gpu_util)
                 if idx%gc["data"]["gradient_accumulation_freq"] != 0:
                     if isinstance(model, torch.nn.parallel.DistributedDataParallel):
                         with model.no_sync():
