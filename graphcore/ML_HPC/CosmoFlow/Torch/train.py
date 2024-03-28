@@ -56,8 +56,8 @@ def main(config):
     
     options = poptorch.Options()
     val_options = poptorch.Options()
-    #options.replicationFactor(gc["training"]["num_ipus"])
-    options.deviceIterations(4)
+    options.replicationFactor(4)
+    options.deviceIterations(32)
     options.Precision.setPartialsType(torch.float16)
     options.Training.gradientAccumulation(8)
     options.randomSeed(1)
@@ -75,8 +75,8 @@ def main(config):
     ipu_info = gcipuinfo.gcipuinfo()
     dataset_size = 4096*4
     
-    train_data = get_dummy_dataloader(options, dataset_size) #get_train_dataloader(options)
-    val_data = get_dummy_dataloader(val_options, dataset_size) #get_val_dataloader(val_options)
+    train_data = get_train_dataloader(options)
+    val_data = get_val_dataloader(val_options)
 
     net = StandardCosmoFlow().to(torch.float16)
     
@@ -111,11 +111,11 @@ def main(config):
         avg_power = total_power/len(train_data)
         
         print(f"Time For Epoch: {total_time}")
-        print(f"Processing Speed: {dataset_size/total_time}")
+        print(f"Processing Speed: {gc['data']['n_train']/total_time}")
         print(f"Avg IPU Usage: {avg_power}")
         
         gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
-        gc.log_event(key="train_loss", value=loss.item(), metadata={"epoch_num": epoch+1})
+        gc.log_event(key="train_loss", value=loss.mean().item(), metadata={"epoch_num": epoch+1})
 
         gc.start_eval(metadata={"epoch_num": epoch+1})
         score.reset()
@@ -127,7 +127,7 @@ def main(config):
             score.update(logits, y)
         mae = score.get_value()
 
-        gc.log_event(key="eval_loss", value=(avg_eval_loss/len(val_data)).item(), metadata={"epoch_num": epoch+1})
+        gc.log_event(key="eval_loss", value=(avg_eval_loss/len(val_data)), metadata={"epoch_num": epoch+1})
         gc.log_event(key="eval_mae", value=mae, metadata={"epoch_num": epoch+1})
         gc.stop_eval(metadata={"epoch_num": epoch+1})
         gc.stop_epoch(metadata={"epoch_num": epoch+1})

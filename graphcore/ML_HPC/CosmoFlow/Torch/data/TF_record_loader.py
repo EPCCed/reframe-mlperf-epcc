@@ -5,7 +5,7 @@ from scipy import datasets
 import torch
 import poptorch
 from torch.utils.data import Dataset, DataLoader, DistributedSampler, RandomSampler
-#from tfrecord.reader import tfrecord_loader
+from tfrecord.reader import tfrecord_loader
 
 from ML_HPC.gc import GlobalContext
 
@@ -49,8 +49,6 @@ def get_train_dataloader(options):
     data = CosmoDataset(path, train=True)
     
     local_bs = gc["data"]["global_batch_size"] //gc["training"]["num_ipus"]
-    iters_per_epoch = len(os.listdir(path)) // local_bs
-    options.deviceIterations(iters_per_epoch)
 
     return poptorch.DataLoader(options=options,
                                dataset=data,
@@ -65,8 +63,6 @@ def get_val_dataloader(options):
     path = os.path.join(gc["data"]["data_dir"], "validation/")
     data = CosmoDataset(path, train=False)
     local_bs = gc["data"]["global_batch_size"] //gc["training"]["num_ipus"]
-    iters_per_epoch = len(os.listdir(path)) // local_bs
-    options.deviceIterations(iters_per_epoch)
 
     return poptorch.DataLoader(options=options,
                                dataset=data,
