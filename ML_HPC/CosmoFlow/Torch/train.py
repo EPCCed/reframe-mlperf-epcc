@@ -164,8 +164,9 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                         print(f"Epoch: {epoch+1} Batch: {idx} Train Time: {time.time()-start} IO Time: {total_io_time*1e-9}")
                 
                 #dist.barrier()
-            
+                torch.cuda.synchronize()
                 start_io = time.time_ns()
+                
         dist.barrier()
         total_io_time *= 1e-9
         
