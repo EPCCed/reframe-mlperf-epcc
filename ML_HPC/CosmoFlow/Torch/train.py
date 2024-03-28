@@ -1,12 +1,9 @@
-from pathlib import Path
 import sys
 import os
-
-path_root = "/".join(os.path.abspath("__file__").split("/")[:-4])
+path_root = "/".join(sys.argv[0].split("/")[:-4])
 sys.path.append(str(path_root))
 import time
 import click
-
 
 import torch 
 import torch.nn as nn
@@ -88,7 +85,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     if gc.device == "cuda":
         torch.cuda.set_device("cuda:" + str(gc.local_rank))
 
-    gc.log_cosmoflow()
+    
     gc.start_init()
     gc.log_seed(1)
 
@@ -101,6 +98,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         get_val_dataloader = TF_rl.get_val_dataloader
     train_data = get_train_dataloader()
     val_data = get_val_dataloader()
+    
+    gc.log_cosmoflow()
     
     if gc.rank == -1:
         train_data = tqdm(train_data, miniters=64, unit="inputs", unit_scale=(gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation_freq"])
@@ -159,11 +158,6 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     opt.step()
                     opt.zero_grad()
                 
-                if idx % 64 == 0:
-                    if gc.rank == 0:
-                        print(f"Epoch: {epoch+1} Batch: {idx} Train Time: {time.time()-start} IO Time: {total_io_time*1e-9}")
-                
-                #dist.barrier()
                 torch.cuda.synchronize()
                 start_io = time.time_ns()
                 

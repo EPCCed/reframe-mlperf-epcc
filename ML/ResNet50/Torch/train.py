@@ -3,8 +3,7 @@ import os
 import sys
 
 
-path_root = "/".join(os.path.abspath("__file__").split("/")[:-4])
-print(path_root)
+path_root = "/".join(sys.argv[0].split("/")[:-4])
 sys.path.append(str(path_root))
 import click
 import time
@@ -21,7 +20,7 @@ import ML.ResNet50.Torch.data.data_loader as dl
 from ML.ResNet50.Torch.opt import Lars as LARS
 from ML.ResNet50.Torch.model.ResNet import ResNet50
 
-def train_step(x, y, model, loss_fn, opt, metric_tracker, batch_idx):
+def train_step(x, y, model, loss_fn, opt, batch_idx):
     if (batch_idx+1)% gc["data"]["gradient_accumulation_freq"] != 0:
         if isinstance(model, torch.nn.parallel.DistributedDataParallel):
             with model.no_sync():
@@ -136,10 +135,8 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
 
     loss_fn = torch.nn.CrossEntropyLoss()
 
-    train_metric = Accuracy(task="multiclass", num_classes=1000)
     val_metric = Accuracy(task="multiclass", num_classes=1000)
 
-    train_metric.to(gc.device)
     val_metric.to(gc.device)
 
     gc.stop_init()
@@ -170,14 +167,13 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 x, y = data
                 x, y = x.to(gc.device), y.to(gc.device)
                 total_io_time += time.time_ns() - start_io
-                loss = train_step(x, y, model, loss_fn, opt, train_metric, i)
+                loss = train_step(x, y, model, loss_fn, opt, i)
                 power_draw.append(gc.gpu_power)
                 gpu_utilization.append(gc.gpu_util)
+                torch.cuda.synchronize()
                 start_io = time.time_ns()
         total_io_time *= 1e-9
 
-        #train_accuracy = train_metric.compute()
-        #dist.reduce(train_accuracy, 0)
         total_time = time.time()-start
         total_time = torch.tensor(total_time).to(gc.device)
         avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
@@ -190,9 +186,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
             if E == 1:
                 print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
                 
-            #print(f"Train Accuracy at Epoch {E}: {train_accuracy/gc.world_size}")
             print(f"Train Loss at Epoch {E}: {loss}")
-
             dataset_size = gc["data"]["train_subset"] if gc["data"]["train_subset"] else 1281167
             print(f"Processing Speed: {(dataset_size/total_time).item()}")
             print(f"Time For Epoch: {total_time}")
@@ -203,6 +197,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
                 print(f"Avg GPU Utilization: {avg_gpu_util/gc.world_size:.2f}")
         dist.barrier()
+        
         gc.start_eval(metadata={"epoch_num": E})
         if E % 4 == 0:
             for x, y in val_data:

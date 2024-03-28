@@ -60,7 +60,7 @@ def main(config):
     train_data = dl.get_train_dataloader(options)
     val_data = dl.get_val_dataloader(val_options)
 
-    net = ResNet50(num_classes=1000).to(torch.float16)
+    net = ResNet50(num_classes=1000)
     net.train()
 
     if gc["opt"]["name"].upper() == "SGD":
@@ -85,9 +85,6 @@ def main(config):
         opt, total_iters=gc["data"]["n_epochs"], power=gc["lr_schedule"]["poly_power"]
     )
 
-    train_metric = Accuracy(task="multiclass", num_classes=1000)
-    val_metric = Accuracy(task="multiclass", num_classes=1000)
-
     model.train()
 
     E = 1
@@ -97,7 +94,6 @@ def main(config):
         for x, y in train_data:
             device_powers = ipu_info.getNamedAttributeForAll(gcipuinfo.IpuPower)
             total_power += sum([pow_to_float(power) for power in device_powers if power != "N/A"])
-            x = x.to(torch.float16)
             loss, out = model(x, y)
         avg_power = total_power/len(train_data)
         

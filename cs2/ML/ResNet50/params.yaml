@@ -1,12 +1,13 @@
 train_input:
-    data_dir: "data/train"
-    batch_size: 64
+    data_dir: "/mnt/e1000/home/z043/z043/crae-cs1/chris-ml-intern/cs2/ML/ResNet50/data"
+    batch_size: 32
     drop_last_batch: True
     shuffle: True
     to_float16: True
+    num_workers: 8
 
 eval_input:
-    data_dir: "data/val"
+    data_dir: "/mnt/e1000/home/z043/z043/crae-cs1/chris-ml-intern/cs2/ML/ResNet50/data"
     batch_size: 32
     drop_last_batch: True
     to_float16: True
@@ -22,8 +23,8 @@ optimizer:
     weight_decay_rate: 0.0001
 
 runconfig:
-    max_steps: 10000
-    checkpoint_steps: 10000
-    log_steps: 50
+    max_steps: 32768
+    checkpoint_steps: 0
+    log_steps: 32
     seed: 1
     save_losses: True

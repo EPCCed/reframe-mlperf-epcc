@@ -3,7 +3,7 @@ device: cpu
 data:
     data_dir: /work/z043//shared/imagenet-1k/huggingface/data
     global_batch_size: 32
-    local_batch_size: 1 # change to 0 to use global_batch_size
+    local_batch_size: 0 # change to 0 to use global_batch_size
     train_subset: 2048
     val_subset: 512
     gradient_accumulation_freq: 1

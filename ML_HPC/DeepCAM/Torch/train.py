@@ -1,6 +1,6 @@
 import os
 import sys
-path_root = "/".join(os.path.abspath("__file__").split("/")[:-4])
+path_root = "/".join(sys.argv[0].split("/")[:-4])
 sys.path.append(str(path_root))
 import time
 import warnings
@@ -44,10 +44,6 @@ class CELoss(nn.Module):
 
         return loss
 
-def dummy_loaders(n_samples):
-    bs = (gc["data"]["global_batch_size"] // gc.world_size)//gc["data"]["gradient_accumulation"]
-    yield torch.ones(bs, 16, 768, 1152),  torch.ones(bs, 1, 768, 1152), "file.txt"
-
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
     if prof is None:
@@ -90,12 +86,14 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
         torch.cuda.set_device("cuda:" + str(gc.local_rank))
     
 
-    gc.log_deepcam()
+    
 
     gc.start_init()
+    gc.log_seed(333)
     
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
-
+    gc.log_deepcam()
+    
     model = DeepLabv3_plus(n_input=16, n_classes=3, pretrained=False, rank=gc.rank, process_group=None,).to(gc.device)
 
     if gc.world_size > 1:
