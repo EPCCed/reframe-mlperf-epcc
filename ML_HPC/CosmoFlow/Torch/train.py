@@ -1,7 +1,18 @@
 import sys
 import os
-path_root = "/".join(sys.argv[0].split("/")[:-4])
+import inspect
+def get_current_file():
+    # Get the current frame
+    current_frame = inspect.currentframe()
+    # Get the outer frame (one level up), to get the caller's file name, not this utility's filename
+    caller_frame = inspect.getouterframes(current_frame)[1]
+    # Extract the file path
+    file_path = caller_frame.filename
+    return file_path
+#print(get_current_file())
+path_root = "/".join(get_current_file().split("/")[:-4])
 sys.path.append(str(path_root))
+
 import time
 import click
 
