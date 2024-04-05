@@ -28,6 +28,8 @@ from ML_HPC.DeepCAM.Torch.model.DeepCAM import DeepLabv3_plus
 from ML_HPC.DeepCAM.Torch.lr_scheduler.schedulers import MultiStepLRWarmup, CosineAnnealingLRWarmup
 from ML_HPC.DeepCAM.Torch.optimizer.lamb import Lamb
 from ML_HPC.DeepCAM.Torch.validation import validate, compute_score
+import nvidia_dlprof_pytorch_nvtx
+
 
 
 class CELoss(nn.Module):
@@ -55,13 +57,13 @@ class CELoss(nn.Module):
 
 def get_comm_time(prof: torch.profiler.profile):
     total_time = 0
-    if prof is None:
+    """ if prof is None:
         return total_time
     backend = "mpi:" if dist.get_backend() == "mpi" else "nccl:"
     for event in list(prof.key_averages()):
         if backend in event.key:
             total_time += event.cpu_time_total * 1e-6
-            total_time += event.cuda_time_total * 1e-6
+            total_time += event.cuda_time_total * 1e-6 """
     return total_time
 
 @click.command()
@@ -98,6 +100,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     
 
     gc.start_init()
+    nvidia_dlprof_pytorch_nvtx.init()
     gc.log_seed(333)
     
     train_data, train_data_size, val_data, val_data_size = dl.get_dataloaders()  
@@ -159,17 +162,18 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
     else:
         amp_type = torch.bfloat16
     # Train Loop
-    while True:
-        
-        gc.start_epoch(metadata={"epoch_num": epoch+1})
-        
-        model.train()
-        start = time.time()
-        total_io_time = 0
-        power_draw = []
-        gpu_utilization = []
+    with torch.autograd.profiler.emit_nvtx():
+        while True:
+            
+            gc.start_epoch(metadata={"epoch_num": epoch+1})
+            
+            model.train()
+            start = time.time()
+            total_io_time = 0
+            power_draw = []
+            gpu_utilization = []
 
-        with gc.profiler(f"Epoch: {epoch+1}") as prof:
+            #with gc.profiler(f"Epoch: {epoch+1}") as prof:
             start_io = time.time_ns()
             for idx, (x, y) in enumerate(train_data):
                 x, y = x.to(gc.device), y.to(gc.device)
@@ -204,54 +208,54 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                 if idx % 16 == 0:
                     if gc.rank == 0:
                         print(f"Epoch: {epoch+1} Batch: {idx}/{len(train_data)} Train Time: {time.time()-start} IO Time: {total_io_time*1e-9}")
-        
-        total_io_time *= 1e-9
-        total_time = time.time()-start
-        avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
-        avg_gpu_util = torch.mean(torch.tensor(gpu_utilization, dtype=torch.float64)).to(gc.device)
-        dist.all_reduce(avg_power_draw)
-        dist.all_reduce(avg_gpu_util)
-        if gc.rank == 0:
-            if epoch == 0:
-                print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
-            print(f"Change In Train Loss at Epoch {epoch}: {loss}")
-            print(f"Processing Speed: {(train_data_size/total_time)}")
-            print(f"Time For Epoch: {total_time}")
-            print(f"Communication Time: {get_comm_time(prof)}")
-            if gc.device == "cuda":
-                print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
-                print(f"Avg GPU Utilization: {avg_gpu_util/gc.world_size:.2f}")
-            print(f"Total IO Time: {total_io_time}")
+            
+            total_io_time *= 1e-9
+            total_time = time.time()-start
+            avg_power_draw = torch.mean(torch.tensor(power_draw, dtype=torch.float64)).to(gc.device)
+            avg_gpu_util = torch.mean(torch.tensor(gpu_utilization, dtype=torch.float64)).to(gc.device)
+            dist.all_reduce(avg_power_draw)
+            dist.all_reduce(avg_gpu_util)
+            if gc.rank == 0:
+                if epoch == 0:
+                    print(f"Change In Train Loss at Epoch: {initial_loss - loss}")
+                print(f"Change In Train Loss at Epoch {epoch}: {loss}")
+                print(f"Processing Speed: {(train_data_size/total_time)}")
+                print(f"Time For Epoch: {total_time}")
+                #print(f"Communication Time: {get_comm_time(prof)}")
+                if gc.device == "cuda":
+                    print(f"Avg GPU Power Draw: {avg_power_draw*1e-3:.5f}")
+                    print(f"Avg GPU Utilization: {avg_gpu_util/gc.world_size:.2f}")
+                print(f"Total IO Time: {total_io_time}")
 
 
-        loss_avg = loss.detach()
-        if dist.is_initialized():
-            dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)
-        loss_avg_train = loss_avg.item() / float(gc.world_size)
+            loss_avg = loss.detach()
+            if dist.is_initialized():
+                dist.reduce(loss_avg, dst=0, op=dist.ReduceOp.SUM)
+            loss_avg_train = loss_avg.item() / float(gc.world_size)
 
-        predictions = torch.argmax(torch.softmax(logits, 1), 1)
-        iou = compute_score(predictions, y, num_classes=3)
-        iou_avg = iou.detach()
-        if dist.is_initialized():
-            dist.reduce(iou_avg, dst=0, op=dist.ReduceOp.SUM)
-        iou_avg_train = iou_avg.item() / float(gc.world_size)
+            predictions = torch.argmax(torch.softmax(logits, 1), 1)
+            iou = compute_score(predictions, y, num_classes=3)
+            iou_avg = iou.detach()
+            if dist.is_initialized():
+                dist.reduce(iou_avg, dst=0, op=dist.ReduceOp.SUM)
+            iou_avg_train = iou_avg.item() / float(gc.world_size)
 
-        gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
-        gc.log_event(key="training_accuracy", value=iou_avg_train, metadata={"epoch_num": epoch+1})
-        gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
+            gc.log_event(key="learning_rate", value=scheduler.get_last_lr()[0], metadata={"epoch_num": epoch+1})
+            gc.log_event(key="training_accuracy", value=iou_avg_train, metadata={"epoch_num": epoch+1})
+            gc.log_event(key="train_loss", value=loss_avg_train, metadata={"epoch": epoch+1})
 
-        
-        stop_training = validate(model, criterion, val_data, epoch)
-        gc.stop_epoch(metadata={"epoch_num": epoch+1})
-        epoch += 1
+            
+            stop_training = validate(model, criterion, val_data, epoch)
+            gc.stop_epoch(metadata={"epoch_num": epoch+1})
+            epoch += 1
 
-        if stop_training or epoch >= gc["data"]["n_epochs"]:
-            if stop_training:
-                gc.log_event(key="target_iou_met", value=gc["training"]["target_iou"], metadata={"epoch_num": epoch+1})
-                gc.stop_run()
-            else:
-                gc.stop_run(metadata={"status": "target not met"})
-            break
+            if stop_training or epoch >= gc["data"]["n_epochs"]:
+                if stop_training:
+                    gc.log_event(key="target_iou_met", value=gc["training"]["target_iou"], metadata={"epoch_num": epoch+1})
+                    gc.stop_run()
+                else:
+                    gc.stop_run(metadata={"status": "target not met"})
+                break
 
 if __name__ == "__main__":
     main()

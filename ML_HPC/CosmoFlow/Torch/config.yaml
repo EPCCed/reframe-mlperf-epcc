@@ -5,7 +5,7 @@ data:
     h5: False
     global_batch_size: 32
     local_batch_size: 8 # set to 0 to use global
-    n_epochs: 10
+    n_epochs: 4
     n_train: 2048
     n_eval: 512
     gradient_accumulation_freq: 1

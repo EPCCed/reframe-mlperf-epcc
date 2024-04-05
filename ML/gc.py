@@ -166,7 +166,7 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
     def print_0(self, *args, **kwargs):
         print(*args, **kwargs)
     
-    @contextmanager
+    """ @contextmanager
     def profiler(self, name: str):
         if self.rank != -1 or not self["training"]["benchmark"]:
             yield None
@@ -175,9 +175,9 @@ class GlobalContext(dict, metaclass=SingletonMetaClass):
                 activities=[ProfilerActivity.CPU]
             else:
                 activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]
-            with profile(activities=activities, with_flops=True) as prof:
+            with profile(activities=activities, profile_memory=True, with_flops=True) as prof:
                 with record_function(name):
-                    yield prof
+                    yield prof """
     
     @_run_on_0
     def log_event(self, *args, sync=True, **kwargs):

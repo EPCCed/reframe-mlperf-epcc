@@ -5,7 +5,7 @@ data:
   local_batch_size: 0
   gradient_accumulation_freq: 1
   shuffle: true
-  n_epochs: 10
+  n_epochs: 4
   prefetch: 4
 opt:
   name: Adam
