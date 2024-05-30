@@ -34,7 +34,6 @@ from ML_HPC.gc import GlobalContext
 
 gc = GlobalContext()
 
-
 def peek_shapes_hdf5(data_dir):
     files = glob.iglob(os.path.join(data_dir, "*.h5"))
     with h5.File(next(files), "r") as fin:
@@ -136,17 +135,20 @@ class CamDataset(Dataset):
         filename = os.path.join(self.source, self.files[idx])
 
         #load data and project
+        torch.cuda.nvtx.range_push("reading file")
         with h5.File(filename, "r", rdcc_nbytes=1048576*50, rdcc_nslots=16) as f:
             data = f["climate"]["data"][..., self.channels]
             label = f["climate"]["labels_0"][...].astype(np.int64)
-        
+        torch.cuda.nvtx.range_pop()
         #preprocess
+        torch.cuda.nvtx.range_push("preprocessing")
         data = self.data_scale * (data - self.data_shift)
 
         if self.transpose:
             #transpose to NCHW
             data = np.transpose(data, (2,0,1))
-        
+        torch.cuda.nvtx.range_pop()
+
         return torch.from_numpy(data), torch.from_numpy(label)
 
 class DummyDataset(Dataset):
