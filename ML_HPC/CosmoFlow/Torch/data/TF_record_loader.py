@@ -24,21 +24,28 @@ class CosmoDataset(Dataset):
     
     def __getitem__(self, index):
         # Theres only one sample per file
+        torch.cuda.nvtx.range_push("reading file")
         data = next(tfrecord_loader(os.path.join(self.root, self.files[index]),
                                     None,
                                     description={"x": "byte", "y":"float"},
                                     compression_type=gc["data"]["compression"]
                                     ))
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_push("bytes->tensor")
         x = torch.frombuffer(data["x"], dtype=torch.int16)
+        y = torch.tensor(data["y"], dtype=torch.float32)
+
+        torch.cuda.nvtx.range_pop()
+        torch.cuda.nvtx.range_push("preprocess")
         x = torch.reshape(x, [128,128,128,4]).to(torch.float32)
         x = x.permute(3,0,1,2)
-        y = torch.tensor(data["y"], dtype=torch.float32)
+        
 
         if gc["data"]["apply_log"]:
             x = torch.log(x+1)
         else:
             x /= (torch.sum(x)/torch.prod(torch.tensor(x.shape)))
-        
+        torch.cuda.nvtx.range_pop()
         return x, y
     
 def get_train_dataloader():

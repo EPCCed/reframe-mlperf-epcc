@@ -1,7 +1,7 @@
 device: cuda
 
 data:
-    data_dir: /work/z04/shared/mlperf-hpc/deepcam/mini/deepcam-data-n512
+    data_dir: /work/z04/shared/mlperf-hpc/deepcam/mini/
     global_batch_size: 32
     local_batch_size: 0
     gradient_accumulation_freq: 1

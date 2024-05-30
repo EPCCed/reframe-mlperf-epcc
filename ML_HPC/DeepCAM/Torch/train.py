@@ -199,6 +199,7 @@ def main(device, config, data_dir, global_batchsize, local_batchsize, t_subset_s
                     scaler.update()
                     opt.zero_grad(set_to_none=True)
                     scheduler.step()
+                torch.cuda.synchronize()
                 start_io = time.time_ns()
                     
                 if idx % 16 == 0:
